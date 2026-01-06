@@ -118,18 +118,19 @@ make run-unified         # Unified HTTP+Kafka demo
 - **Chunked Encoding**: Automatic handling of Transfer-Encoding: chunked
 
 ### Kafka Integration
-- **Producer API**: `kafka_producer_create()`, `kafka_producer_send()`
-- **Consumer API**: `kafka_consumer_create()`, `kafka_consumer_subscribe()`
+- **Unified Client**: `kafka_client_create()` for both producer and consumer
+- **Producer API**: `kafka_producer_init()`, `kafka_produce_string()`
+- **Consumer API**: `kafka_consumer_register()` with callback handlers
 - **Multi-Topic**: Subscribe to multiple topics simultaneously
 - **Authentication**: SASL PLAIN and SCRAM support
-- **Delivery Reports**: Track message delivery status
+- **Async Processing**: Non-blocking message consumption with callbacks
 
 ### JSON Processing
-- **Parser**: `json_parse()` - Parse JSON strings
-- **Builder**: `json_object_create()`, `json_array_create()`
-- **Schema Validation**: `json_schema_validate()`
-- **Stringify**: `json_stringify()` - Convert to string
-- **Type Checking**: Full support for all JSON types
+- **Parser**: `json_parse()` - Parse JSON strings into tree structure
+- **Builder**: `json_builder_create()` - Construct JSON programmatically
+- **Schema Validation**: `json_parse_with_schema()` - Parse and validate
+- **Value Access**: `json_get_path()`, `json_get_string/int/bool/double()`
+- **Serialization**: `json_serialize()` - Convert structs to JSON
 
 ### Static File Serving
 - **Route Registration**: `http_server_serve_static()`
@@ -218,27 +219,41 @@ int main() {
 ### 3. Kafka Producer/Consumer
 
 ```c
-#include "kafka.h"
+#include "kafka_client.h"
+
+void handle_message(KAFKA_MESSAGE *msg, void *user_data) {
+    if (msg && msg->payload) {
+        printf("Received: %s\n", (char*)msg->payload);
+    }
+}
 
 int main() {
-    // Producer
-    KAFKA_PRODUCER *producer = kafka_producer_create("localhost:9092");
-    kafka_producer_send(producer, "my-topic", "key", "Hello Kafka!");
-    kafka_producer_destroy(producer);
+    // Create Kafka client
+    KAFKA_CLIENT *client = kafka_client_create();
     
-    // Consumer
-    KAFKA_CONSUMER *consumer = kafka_consumer_create("localhost:9092", "my-group");
-    kafka_consumer_subscribe(consumer, "my-topic");
+    // Configure and register consumer
+    KAFKA_CONSUMER_CONFIG consumer_config;
+    kafka_consumer_config_default(&consumer_config, "localhost:9092", "my-group");
+    kafka_consumer_register(client, "my-topic", &consumer_config, handle_message, NULL);
     
+    // Configure and initialize producer
+    KAFKA_PRODUCER_CONFIG producer_config;
+    kafka_producer_config_default(&producer_config, "localhost:9092");
+    kafka_producer_init(client, &producer_config);
+    
+    // Produce a message
+    kafka_produce_string(client, "my-topic", "key", "Hello Kafka!");
+    
+    // Start consuming (non-blocking)
+    kafka_client_start(client);
+    
+    // Keep running...
     while (running) {
-        KAFKA_MESSAGE *msg = kafka_consumer_poll(consumer, 1000);
-        if (msg && msg->payload) {
-            printf("Received: %s\n", (char*)msg->payload);
-        }
-        kafka_message_destroy(msg);
+        sleep(1);
     }
     
-    kafka_consumer_destroy(consumer);
+    kafka_client_stop(client);
+    kafka_client_destroy(client);
     return 0;
 }
 ```
@@ -246,30 +261,34 @@ int main() {
 ### 4. JSON Processing
 
 ```c
-#include "json.h"
+#include "json_parser.h"
 
 int main() {
     // Parse JSON
     const char *json_str = "{\"name\":\"John\",\"age\":30}";
     JSON_VALUE *value = json_parse(json_str);
     
-    JSON_OBJECT *obj = json_value_as_object(value);
-    const char *name = json_object_get_string(obj, "name");
-    int age = json_object_get_number(obj, "age");
+    // Access values using helper functions
+    JSON_VALUE *name_val = json_get_path(value, "name");
+    JSON_VALUE *age_val = json_get_path(value, "age");
+    
+    const char *name = json_get_string(name_val);
+    int age = json_get_int(age_val, 0);
     
     printf("Name: %s, Age: %d\n", name, age);
     
-    // Build JSON
-    JSON_OBJECT *new_obj = json_object_create();
-    json_object_set_string(new_obj, "status", "success");
-    json_object_set_number(new_obj, "code", 200);
+    // Build JSON using builder
+    JSON_BUILDER *builder = json_builder_create(256);
+    json_builder_start_object(builder);
+    json_builder_add_string(builder, "status", "success");
+    json_builder_add_int(builder, "code", 200);
+    json_builder_end_object(builder);
     
-    char *output = json_stringify(json_object_to_value(new_obj), 1);
+    const char *output = json_builder_get_string(builder);
     printf("%s\n", output);
     
-    json_value_destroy(value);
-    json_object_destroy(new_obj);
-    free(output);
+    json_free(value);
+    json_builder_destroy(builder);
     
     return 0;
 }
@@ -463,26 +482,46 @@ const char* http_client_response_get_header(HTTP_CLIENT_RESPONSE *response, cons
 
 ### Kafka API
 
-#### Producer
+#### Client Management
 ```c
-KAFKA_PRODUCER* kafka_producer_create(const char *brokers);
-void kafka_producer_destroy(KAFKA_PRODUCER *producer);
-int kafka_producer_send(KAFKA_PRODUCER *producer, const char *topic, const char *key, const char *value);
-int kafka_producer_send_binary(KAFKA_PRODUCER *producer, const char *topic, const void *key, size_t key_len, 
-                                const void *value, size_t value_len);
-void kafka_producer_flush(KAFKA_PRODUCER *producer, int timeout_ms);
-void kafka_producer_set_delivery_callback(KAFKA_PRODUCER *producer, KAFKA_DELIVERY_CALLBACK callback);
+KAFKA_CLIENT* kafka_client_create(void);
+void kafka_client_destroy(KAFKA_CLIENT *client);
+int kafka_client_start(KAFKA_CLIENT *client);
+int kafka_client_stop(KAFKA_CLIENT *client);
 ```
 
 #### Consumer
 ```c
-KAFKA_CONSUMER* kafka_consumer_create(const char *brokers, const char *group_id);
-void kafka_consumer_destroy(KAFKA_CONSUMER *consumer);
-int kafka_consumer_subscribe(KAFKA_CONSUMER *consumer, const char *topic);
-int kafka_consumer_subscribe_multiple(KAFKA_CONSUMER *consumer, const char **topics, int topic_count);
-KAFKA_MESSAGE* kafka_consumer_poll(KAFKA_CONSUMER *consumer, int timeout_ms);
-void kafka_message_destroy(KAFKA_MESSAGE *message);
-int kafka_consumer_commit(KAFKA_CONSUMER *consumer);
+int kafka_consumer_register(KAFKA_CLIENT *client, const char *topic,
+                           KAFKA_CONSUMER_CONFIG *config,
+                           kafka_consumer_handler_fn handler,
+                           void *user_data);
+int kafka_consumer_register_multi(KAFKA_CLIENT *client, const char **topics,
+                                 size_t topic_count,
+                                 KAFKA_CONSUMER_CONFIG *config,
+                                 kafka_consumer_handler_fn handler,
+                                 void *user_data);
+void kafka_consumer_config_default(KAFKA_CONSUMER_CONFIG *config,
+                                  const char *brokers,
+                                  const char *group_id);
+```
+
+#### Producer
+```c
+int kafka_producer_init(KAFKA_CLIENT *client, KAFKA_PRODUCER_CONFIG *config);
+int kafka_produce(KAFKA_CLIENT *client, const char *topic,
+                 const void *key, size_t key_len,
+                 const void *payload, size_t payload_len);
+int kafka_produce_string(KAFKA_CLIENT *client, const char *topic,
+                        const char *key, const char *payload);
+void kafka_producer_config_default(KAFKA_PRODUCER_CONFIG *config,
+                                  const char *brokers);
+```
+
+#### Message Helpers
+```c
+const char* kafka_message_get_payload_string(KAFKA_MESSAGE *message);
+const char* kafka_message_get_key_string(KAFKA_MESSAGE *message);
 ```
 
 #### Authentication
@@ -498,52 +537,42 @@ int kafka_consumer_set_sasl_auth(KAFKA_CONSUMER *consumer, const char *mechanism
 #### Parsing
 ```c
 JSON_VALUE* json_parse(const char *json_str);
-void json_value_destroy(JSON_VALUE *value);
+void json_free(JSON_VALUE *value);
 ```
 
-#### Type Checking
+#### Schema-Based Parsing
 ```c
-int json_value_is_object(JSON_VALUE *value);
-int json_value_is_array(JSON_VALUE *value);
-int json_value_is_string(JSON_VALUE *value);
-int json_value_is_number(JSON_VALUE *value);
-int json_value_is_boolean(JSON_VALUE *value);
-int json_value_is_null(JSON_VALUE *value);
+int json_parse_with_schema(const char *json_string, const JSON_SCHEMA *schema, void *target);
+int json_parse_and_validate(const char *json_string, const JSON_SCHEMA *schema, 
+                            void *target, JSON_VALIDATION_RESULT *result);
+int json_serialize(const void *source, const JSON_SCHEMA *schema, 
+                   char *buffer, size_t buffer_size);
 ```
 
-#### Object Operations
+#### Value Access
 ```c
-JSON_OBJECT* json_object_create(void);
-void json_object_destroy(JSON_OBJECT *object);
-void json_object_set_string(JSON_OBJECT *object, const char *key, const char *value);
-void json_object_set_number(JSON_OBJECT *object, const char *key, double value);
-void json_object_set_boolean(JSON_OBJECT *object, const char *key, int value);
-void json_object_set_null(JSON_OBJECT *object, const char *key);
-const char* json_object_get_string(JSON_OBJECT *object, const char *key);
-double json_object_get_number(JSON_OBJECT *object, const char *key);
-int json_object_get_boolean(JSON_OBJECT *object, const char *key);
+JSON_VALUE* json_get_path(JSON_VALUE *value, const char *path);
+const char* json_get_string(JSON_VALUE *value);
+int json_get_int(JSON_VALUE *value, int default_val);
+int json_get_bool(JSON_VALUE *value, int default_val);
+double json_get_double(JSON_VALUE *value, double default_val);
 ```
 
-#### Array Operations
+#### JSON Builder
 ```c
-JSON_ARRAY* json_array_create(void);
-void json_array_destroy(JSON_ARRAY *array);
-void json_array_add_string(JSON_ARRAY *array, const char *value);
-void json_array_add_number(JSON_ARRAY *array, double value);
-size_t json_array_size(JSON_ARRAY *array);
-```
-
-#### Stringify
-```c
-char* json_stringify(JSON_VALUE *value, int pretty);
-```
-
-#### Schema Validation
-```c
-JSON_SCHEMA* json_schema_create(void);
-void json_schema_destroy(JSON_SCHEMA *schema);
-int json_schema_add_required_field(JSON_SCHEMA *schema, const char *field_name, const char *type);
-int json_schema_validate(JSON_SCHEMA *schema, JSON_VALUE *value);
+JSON_BUILDER* json_builder_create(size_t initial_size);
+void json_builder_destroy(JSON_BUILDER *builder);
+void json_builder_start_object(JSON_BUILDER *builder);
+void json_builder_end_object(JSON_BUILDER *builder);
+void json_builder_start_array(JSON_BUILDER *builder);
+void json_builder_end_array(JSON_BUILDER *builder);
+void json_builder_add_string(JSON_BUILDER *builder, const char *key, const char *value);
+void json_builder_add_int(JSON_BUILDER *builder, const char *key, int value);
+void json_builder_add_int64(JSON_BUILDER *builder, const char *key, int64_t value);
+void json_builder_add_double(JSON_BUILDER *builder, const char *key, double value);
+void json_builder_add_bool(JSON_BUILDER *builder, const char *key, int value);
+void json_builder_add_null(JSON_BUILDER *builder, const char *key);
+const char* json_builder_get_string(JSON_BUILDER *builder);
 ```
 
 ### HTTP Server API
@@ -824,18 +853,18 @@ brew install openssl zlib librdkafka
 ```c
 // Receives HTTP requests and publishes to Kafka
 void handle_event(HTTP_REQUEST *request, HTTP_RESPONSE *response, void *user_data) {
-    KAFKA_PRODUCER *producer = (KAFKA_PRODUCER*)user_data;
+    KAFKA_CLIENT *client = (KAFKA_CLIENT*)user_data;
     
     // Parse incoming JSON
     JSON_VALUE *value = json_parse(request->body);
     
     // Publish to Kafka
-    kafka_producer_send(producer, "events", NULL, request->body);
+    kafka_produce_string(client, "events", NULL, request->body);
     
     // Respond immediately
     http_response_set_json(response, "{\"status\":\"accepted\"}");
     
-    json_value_destroy(value);
+    json_free(value);
 }
 ```
 
@@ -861,29 +890,27 @@ void load_dashboard(void) {
 
 ```c
 // Consume Kafka messages and send HTTP notifications
-void process_messages(void) {
-    KAFKA_CONSUMER *consumer = kafka_consumer_create("localhost:9092", "notifications");
-    kafka_consumer_subscribe(consumer, "user-events");
-    
-    while (running) {
-        KAFKA_MESSAGE *msg = kafka_consumer_poll(consumer, 1000);
-        if (msg && msg->payload) {
-            // Parse event
-            JSON_VALUE *event = json_parse((char*)msg->payload);
-            
-            // Send HTTP notification
-            char url[256];
-            snprintf(url, sizeof(url), "https://api.example.com/notify");
-            
-            HTTP_CLIENT_RESPONSE *resp = http_client_post_json(url, (char*)msg->payload);
-            http_client_response_destroy(resp);
-            
-            json_value_destroy(event);
-        }
-        kafka_message_destroy(msg);
+void handle_notification(KAFKA_MESSAGE *msg, void *user_data) {
+    if (msg && msg->payload) {
+        // Parse event
+        JSON_VALUE *event = json_parse((char*)msg->payload);
+        
+        // Send HTTP notification
+        char url[256];
+        snprintf(url, sizeof(url), "https://api.example.com/notify");
+        
+        HTTP_CLIENT_RESPONSE *resp = http_client_post_json(url, (char*)msg->payload);
+        http_client_response_destroy(resp);
+        
+        json_free(event);
     }
-    
-    kafka_consumer_destroy(consumer);
+}
+
+void setup_notifications(KAFKA_CLIENT *client) {
+    KAFKA_CONSUMER_CONFIG config;
+    kafka_consumer_config_default(&config, "localhost:9092", "notifications");
+    kafka_consumer_register(client, "user-events", &config, handle_notification, NULL);
+    kafka_client_start(client);
 }
 ```
 
