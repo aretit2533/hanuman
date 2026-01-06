@@ -1,0 +1,133 @@
+.TH MODULE 3 "2025-12-19" "Equinox Framework 1.0" "Equinox Framework Manual"
+.SH NAME
+module \- modular component management functions
+.SH SYNOPSIS
+.nf
+.B #include <module.h>
+.PP
+.BI "MODULE* module_create(const char *" name ", int " version );
+.BI "void module_destroy(MODULE *" module );
+.BI "int module_set_init(MODULE *" module ", module_init_fn " init_fn );
+.BI "int module_set_start(MODULE *" module ", module_start_fn " start_fn );
+.BI "int module_set_stop(MODULE *" module ", module_stop_fn " stop_fn );
+.BI "int module_set_cleanup(MODULE *" module ", module_cleanup_fn " cleanup_fn );
+.BI "int module_add_dependency(MODULE *" module ", const char *" dependency_name );
+.BI "int module_init(MODULE *" module );
+.BI "int module_start(MODULE *" module );
+.BI "int module_stop(MODULE *" module );
+.BI "int module_cleanup(MODULE *" module );
+.BI "const char* module_get_name(MODULE *" module );
+.BI "MODULE_STATE module_get_state(MODULE *" module );
+.fi
+.SH DESCRIPTION
+The module API provides functions for creating and managing reusable functional components within an Equinox Framework application. Modules support lifecycle callbacks and dependency management.
+.PP
+.BR module_create ()
+creates a new module with the specified
+.I name
+and
+.IR version .
+Returns a pointer to the MODULE structure or NULL on failure.
+.PP
+.BR module_destroy ()
+destroys a module instance and frees all associated resources.
+.PP
+.BR module_set_init ()
+registers an initialization callback function that will be called when the module is initialized.
+.PP
+.BR module_set_start ()
+registers a start callback function that will be called when the module is started.
+.PP
+.BR module_set_stop ()
+registers a stop callback function that will be called when the module is stopped.
+.PP
+.BR module_set_cleanup ()
+registers a cleanup callback function that will be called when the module is being destroyed.
+.PP
+.BR module_add_dependency ()
+declares that this module depends on another module specified by
+.IR dependency_name .
+The dependency must be registered and initialized before this module.
+.PP
+.BR module_init ()
+initializes the module, calling its init callback if registered.
+.PP
+.BR module_start ()
+starts the module, calling its start callback if registered. The module must be initialized first.
+.PP
+.BR module_stop ()
+stops the module, calling its stop callback if registered.
+.PP
+.BR module_cleanup ()
+performs cleanup operations, calling the cleanup callback if registered.
+.PP
+.BR module_get_name ()
+returns the module name as a string.
+.PP
+.BR module_get_state ()
+returns the current state of the module.
+.SH RETURN VALUE
+.BR module_create ()
+returns a pointer to MODULE on success, or NULL on failure.
+.PP
+.BR module_set_init (),
+.BR module_set_start (),
+.BR module_set_stop (),
+.BR module_set_cleanup (),
+.BR module_add_dependency (),
+.BR module_init (),
+.BR module_start (),
+.BR module_stop (),
+and
+.BR module_cleanup ()
+return FRAMEWORK_SUCCESS (0) on success, or a negative error code on failure.
+.PP
+.BR module_get_name ()
+returns a pointer to the module name string.
+.PP
+.BR module_get_state ()
+returns one of the following MODULE_STATE values:
+.RS
+.TP
+.B MODULE_STATE_CREATED
+Module has been created but not initialized
+.TP
+.B MODULE_STATE_INITIALIZED
+Module has been initialized
+.TP
+.B MODULE_STATE_STARTED
+Module is running
+.TP
+.B MODULE_STATE_STOPPED
+Module has been stopped
+.RE
+.SH EXAMPLE
+.nf
+#include <module.h>
+
+static int my_module_init(MODULE *module) {
+    printf("Initializing module\\n");
+    return FRAMEWORK_SUCCESS;
+}
+
+static int my_module_start(MODULE *module) {
+    printf("Starting module\\n");
+    return FRAMEWORK_SUCCESS;
+}
+
+MODULE* create_my_module(void) {
+    MODULE *mod = module_create("MyModule", 1);
+    if (!mod) return NULL;
+    
+    module_set_init(mod, my_module_init);
+    module_set_start(mod, my_module_start);
+    
+    return mod;
+}
+.fi
+.SH SEE ALSO
+.BR application (3),
+.BR service_controller (3),
+.BR framework (3)
+.SH AUTHOR
+Equinox Framework Development Team

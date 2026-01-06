@@ -1,0 +1,179 @@
+.TH HTTP_SERVER 3 "2025-12-19" "Equinox Framework 1.0" "Equinox Framework Manual"
+.SH NAME
+http_server \- HTTP/1.1 and HTTP/2 server functions
+.SH SYNOPSIS
+.nf
+.B #include <http_server.h>
+.PP
+.B Server Management
+.BI "HTTP_SERVER* http_server_create(const char *" host ", int " port );
+.BI "void http_server_destroy(HTTP_SERVER *" server );
+.BI "int http_server_start(HTTP_SERVER *" server );
+.BI "int http_server_stop(HTTP_SERVER *" server );
+.BI "int http_server_run(HTTP_SERVER *" server );
+.PP
+.B Route Management
+.BI "int http_server_add_route(HTTP_SERVER *" server ", HTTP_METHOD " method ,
+.BI "                         const char *" path ", http_route_handler_fn " handler ,
+.BI "                         void *" user_data );
+.PP
+.B Request Functions
+.BI "const char* http_request_get_header(HTTP_REQUEST *" request ", const char *" name );
+.BI "const char* http_request_get_path_param(HTTP_REQUEST *" request ", const char *" name );
+.BI "const char* http_request_get_query_param(HTTP_REQUEST *" request ", const char *" name );
+.PP
+.B Response Functions
+.BI "HTTP_RESPONSE* http_response_create(void);"
+.BI "void http_response_destroy(HTTP_RESPONSE *" response );
+.BI "void http_response_set_status(HTTP_RESPONSE *" response ", HTTP_STATUS " status );
+.BI "int http_response_add_header(HTTP_RESPONSE *" response ,
+.BI "                            const char *" name ", const char *" value );
+.BI "void http_response_set_text(HTTP_RESPONSE *" response ", const char *" text );
+.BI "void http_response_set_json(HTTP_RESPONSE *" response ", const char *" json );
+.fi
+.SH DESCRIPTION
+The HTTP server API provides a full-featured web server supporting HTTP/1.1 and HTTP/2 protocols with EPOLL-based concurrent connection handling.
+.PP
+.B Server Management
+.PP
+.BR http_server_create ()
+creates a new HTTP server that listens on the specified
+.I host
+address and
+.IR port .
+Use "0.0.0.0" to listen on all interfaces. Supports up to 1000 concurrent connections.
+.PP
+.BR http_server_destroy ()
+stops and destroys an HTTP server instance, freeing all resources.
+.PP
+.BR http_server_start ()
+starts the HTTP server and begins listening for connections. This function returns immediately; use
+.BR http_server_run ()
+to process events.
+.PP
+.BR http_server_stop ()
+stops the HTTP server and closes all active connections.
+.PP
+.BR http_server_run ()
+runs the event loop to process incoming connections and requests. This is a blocking call that runs until the server is stopped.
+.PP
+.B Route Management
+.PP
+.BR http_server_add_route ()
+registers a route handler for the specified HTTP
+.I method
+and URL
+.IR path .
+The path can include parameters using colon syntax (e.g., "/api/users/:id"). The
+.I handler
+function will be called when a matching request is received.
+.PP
+Supported methods: HTTP_METHOD_GET, HTTP_METHOD_POST, HTTP_METHOD_PUT, HTTP_METHOD_PATCH, HTTP_METHOD_DELETE
+.PP
+.B Request Functions
+.PP
+.BR http_request_get_header ()
+retrieves the value of an HTTP request header by
+.IR name .
+Header names are case-insensitive.
+.PP
+.BR http_request_get_path_param ()
+retrieves a path parameter value extracted from the URL. For a route "/api/users/:id" and request "/api/users/123", calling this with
+.I name
+"id" returns "123".
+.PP
+.BR http_request_get_query_param ()
+retrieves a query string parameter value by
+.IR name .
+For a request with "?page=2&limit=10", calling this with "page" returns "2". Values are automatically URL-decoded.
+.PP
+.B Response Functions
+.PP
+.BR http_response_create ()
+creates a new HTTP response object. The response is automatically initialized with a 200 OK status.
+.PP
+.BR http_response_destroy ()
+destroys a response object and frees its resources.
+.PP
+.BR http_response_set_status ()
+sets the HTTP status code for the response (e.g., HTTP_STATUS_OK, HTTP_STATUS_NOT_FOUND).
+.PP
+.BR http_response_add_header ()
+adds an HTTP header to the response with the specified
+.I name
+and
+.IR value .
+.PP
+.BR http_response_set_text ()
+sets the response body to plain text. Automatically sets Content-Type to "text/plain".
+.PP
+.BR http_response_set_json ()
+sets the response body to JSON. Automatically sets Content-Type to "application/json".
+.SH RETURN VALUE
+.BR http_server_create ()
+returns a pointer to HTTP_SERVER on success, or NULL on failure.
+.PP
+.BR http_server_start (),
+.BR http_server_stop (),
+.BR http_server_run (),
+.BR http_server_add_route (),
+and
+.BR http_response_add_header ()
+return FRAMEWORK_SUCCESS (0) on success, or a negative error code on failure.
+.PP
+.BR http_request_get_header (),
+.BR http_request_get_path_param (),
+and
+.BR http_request_get_query_param ()
+return a pointer to the value string on success, or NULL if not found.
+.PP
+.BR http_response_create ()
+returns a pointer to HTTP_RESPONSE on success, or NULL on failure.
+.SH EXAMPLE
+.nf
+#include <http_server.h>
+
+void hello_handler(HTTP_REQUEST *req, HTTP_RESPONSE *res, void *data) {
+    http_response_set_json(res, "{\\"message\\": \\"Hello, World!\\"}");
+}
+
+void user_handler(HTTP_REQUEST *req, HTTP_RESPONSE *res, void *data) {
+    const char *id = http_request_get_path_param(req, "id");
+    const char *format = http_request_get_query_param(req, "format");
+    
+    char body[256];
+    snprintf(body, sizeof(body), "User: %s, Format: %s",
+             id ? id : "unknown",
+             format ? format : "default");
+    http_response_set_text(res, body);
+}
+
+int main(void) {
+    HTTP_SERVER *server = http_server_create("0.0.0.0", 8080);
+    
+    http_server_add_route(server, HTTP_METHOD_GET, 
+                         "/api/hello", hello_handler, NULL);
+    http_server_add_route(server, HTTP_METHOD_GET,
+                         "/api/users/:id", user_handler, NULL);
+    
+    http_server_start(server);
+    http_server_run(server);
+    
+    http_server_destroy(server);
+    return 0;
+}
+.fi
+.SH NOTES
+The HTTP server automatically detects and handles HTTP/2 connections when a client sends the HTTP/2 connection preface.
+.PP
+Path parameters support dynamic routing with the `:param` syntax. Multiple parameters can be used in a single path.
+.PP
+Query strings are automatically parsed and URL-decoded. Both percent encoding (%20) and plus encoding (+) are supported.
+.PP
+The server uses EPOLL for efficient concurrent connection handling on Linux systems, supporting up to 1000 simultaneous connections.
+.SH SEE ALSO
+.BR http_route (3),
+.BR application (3),
+.BR framework (3)
+.SH AUTHOR
+Equinox Framework Development Team

@@ -1,0 +1,135 @@
+.TH SERVICE_CONTROLLER 3 "2025-12-19" "Equinox Framework 1.0" "Equinox Framework Manual"
+.SH NAME
+service_controller \- service endpoint management functions
+.SH SYNOPSIS
+.nf
+.B #include <service_controller.h>
+.PP
+.BI "SERVICE_CONTROLLER* service_controller_create(const char *" name );
+.BI "void service_controller_destroy(SERVICE_CONTROLLER *" controller );
+.BI "int service_controller_register_operation(SERVICE_CONTROLLER *" controller ,
+.BI "                                         const char *" operation ,
+.BI "                                         service_operation_fn " handler );
+.BI "int service_controller_process_request(SERVICE_CONTROLLER *" controller ,
+.BI "                                      SERVICE_REQUEST *" request ,
+.BI "                                      SERVICE_RESPONSE *" response );
+.BI "int service_controller_set_init(SERVICE_CONTROLLER *" controller ,
+.BI "                               service_init_fn " init_fn );
+.BI "int service_controller_set_start(SERVICE_CONTROLLER *" controller ,
+.BI "                                service_start_fn " start_fn );
+.BI "int service_controller_set_stop(SERVICE_CONTROLLER *" controller ,
+.BI "                               service_stop_fn " stop_fn );
+.BI "const char* service_controller_get_name(SERVICE_CONTROLLER *" controller );
+.PP
+.B Request/Response Functions
+.BI "SERVICE_REQUEST* service_request_create(const char *" operation );
+.BI "void service_request_destroy(SERVICE_REQUEST *" request );
+.BI "SERVICE_RESPONSE* service_response_create(void);"
+.BI "void service_response_destroy(SERVICE_RESPONSE *" response );
+.fi
+.SH DESCRIPTION
+The service controller API provides functions for creating service endpoints with named operations that can process requests and generate responses.
+.PP
+.BR service_controller_create ()
+creates a new service controller with the specified
+.IR name .
+Returns a pointer to the SERVICE_CONTROLLER structure or NULL on failure.
+.PP
+.BR service_controller_destroy ()
+destroys a service controller instance and frees all associated resources.
+.PP
+.BR service_controller_register_operation ()
+registers an operation handler function for the specified
+.IR operation .
+When a request for this operation is received, the handler will be called.
+.PP
+.BR service_controller_process_request ()
+processes a service request by dispatching it to the appropriate operation handler. The result is written to the
+.I response
+object.
+.PP
+.BR service_controller_set_init ()
+registers an initialization callback function that will be called when the service is initialized.
+.PP
+.BR service_controller_set_start ()
+registers a start callback function that will be called when the service is started.
+.PP
+.BR service_controller_set_stop ()
+registers a stop callback function that will be called when the service is stopped.
+.PP
+.BR service_controller_get_name ()
+returns the service controller name as a string.
+.PP
+.BR service_request_create ()
+creates a new service request for the specified
+.IR operation .
+.PP
+.BR service_request_destroy ()
+destroys a service request and frees its resources.
+.PP
+.BR service_response_create ()
+creates a new service response object.
+.PP
+.BR service_response_destroy ()
+destroys a service response and frees its resources.
+.SH RETURN VALUE
+.BR service_controller_create ()
+returns a pointer to SERVICE_CONTROLLER on success, or NULL on failure.
+.PP
+.BR service_controller_register_operation (),
+.BR service_controller_process_request (),
+.BR service_controller_set_init (),
+.BR service_controller_set_start (),
+and
+.BR service_controller_set_stop ()
+return FRAMEWORK_SUCCESS (0) on success, or a negative error code on failure.
+.PP
+.BR service_controller_get_name ()
+returns a pointer to the service name string.
+.PP
+.BR service_request_create ()
+and
+.BR service_response_create ()
+return pointers to their respective structures on success, or NULL on failure.
+.SH EXAMPLE
+.nf
+#include <service_controller.h>
+
+static int hello_operation(SERVICE_REQUEST *req, 
+                          SERVICE_RESPONSE *res, void *data) {
+    res->status_code = FRAMEWORK_SUCCESS;
+    snprintf(res->data, sizeof(res->data), 
+             "Hello from service!");
+    return FRAMEWORK_SUCCESS;
+}
+
+SERVICE_CONTROLLER* create_my_service(void) {
+    SERVICE_CONTROLLER *svc = service_controller_create("MyService");
+    if (!svc) return NULL;
+    
+    service_controller_register_operation(svc, "hello", 
+                                         hello_operation);
+    
+    return svc;
+}
+
+/* Using the service */
+void test_service(SERVICE_CONTROLLER *svc) {
+    SERVICE_REQUEST *req = service_request_create("hello");
+    SERVICE_RESPONSE *res = service_response_create();
+    
+    if (service_controller_process_request(svc, req, res) 
+        == FRAMEWORK_SUCCESS) {
+        printf("Response: %s\\n", res->data);
+    }
+    
+    service_request_destroy(req);
+    service_response_destroy(res);
+}
+.fi
+.SH SEE ALSO
+.BR application (3),
+.BR module (3),
+.BR framework (3)
+.SH AUTHOR
+Equinox Framework Development Team

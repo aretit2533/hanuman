@@ -1,0 +1,701 @@
+#define _POSIX_C_SOURCE 200809L
+#include "http_client.h"
+#include "framework.h"
+#include <stdlib.h>
+#include <string.h>
+#include <strings.h>
+#include <stdio.h>
+#include <unistd.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <netdb.h>
+#include <errno.h>
+#include <time.h>
+#include <sys/time.h>
+#include <fcntl.h>
+#include <sys/select.h>
+#include <openssl/ssl.h>
+#include <openssl/err.h>
+#include <openssl/x509v3.h>
+
+#define INITIAL_HEADER_CAPACITY 10
+#define INITIAL_BUFFER_SIZE 8192
+#define MAX_RESPONSE_SIZE (10 * 1024 * 1024) /* 10MB */
+#define DEFAULT_TIMEOUT 30
+#define DEFAULT_MAX_REDIRECTS 5
+
+/* Global SSL context */
+static SSL_CTX *g_ssl_ctx = NULL;
+static int g_ssl_initialized = 0;
+
+/* Initialize OpenSSL */
+static void init_openssl(void)
+{
+    if (g_ssl_initialized) return;
+    
+    SSL_library_init();
+    SSL_load_error_strings();
+    OpenSSL_add_all_algorithms();
+    
+    g_ssl_ctx = SSL_CTX_new(TLS_client_method());
+    if (!g_ssl_ctx) {
+        framework_log(LOG_LEVEL_ERROR, "Failed to create SSL context");
+        return;
+    }
+    
+    /* Set default verification mode */
+    SSL_CTX_set_verify(g_ssl_ctx, SSL_VERIFY_PEER, NULL);
+    SSL_CTX_set_default_verify_paths(g_ssl_ctx);
+    
+    g_ssl_initialized = 1;
+    framework_log(LOG_LEVEL_DEBUG, "OpenSSL initialized");
+}
+
+/* URL parsing result */
+typedef struct {
+    char protocol[16];
+    char host[256];
+    int port;
+    char path[1024];
+} URL_PARTS;
+
+/* ==================== URL Parsing ==================== */
+
+static int parse_url(const char *url, URL_PARTS *parts)
+{
+    memset(parts, 0, sizeof(URL_PARTS));
+    
+    /* Parse protocol */
+    const char *proto_end = strstr(url, "://");
+    if (!proto_end) {
+        return FRAMEWORK_ERROR_INVALID;
+    }
+    
+    size_t proto_len = proto_end - url;
+    if (proto_len >= sizeof(parts->protocol)) {
+        return FRAMEWORK_ERROR_INVALID;
+    }
+    
+    strncpy(parts->protocol, url, proto_len);
+    parts->protocol[proto_len] = '\0';
+    
+    /* Default ports */
+    if (strcasecmp(parts->protocol, "http") == 0) {
+        parts->port = 80;
+    } else if (strcasecmp(parts->protocol, "https") == 0) {
+        parts->port = 443;
+    } else {
+        return FRAMEWORK_ERROR_INVALID;
+    }
+    
+    /* Parse host and path */
+    const char *host_start = proto_end + 3;
+    const char *path_start = strchr(host_start, '/');
+    
+    if (path_start) {
+        /* Host with path */
+        size_t host_len = path_start - host_start;
+        if (host_len >= sizeof(parts->host)) {
+            return FRAMEWORK_ERROR_INVALID;
+        }
+        strncpy(parts->host, host_start, host_len);
+        parts->host[host_len] = '\0';
+        strncpy(parts->path, path_start, sizeof(parts->path) - 1);
+    } else {
+        /* Host without path */
+        strncpy(parts->host, host_start, sizeof(parts->host) - 1);
+        strcpy(parts->path, "/");
+    }
+    
+    /* Check for port in host */
+    char *port_sep = strchr(parts->host, ':');
+    if (port_sep) {
+        *port_sep = '\0';
+        parts->port = atoi(port_sep + 1);
+    }
+    
+    return FRAMEWORK_SUCCESS;
+}
+
+/* ==================== Request Management ==================== */
+
+HTTP_CLIENT_REQUEST* http_client_request_create(const char *method, const char *url)
+{
+    if (!method || !url) {
+        return NULL;
+    }
+    
+    HTTP_CLIENT_REQUEST *request = (HTTP_CLIENT_REQUEST*)calloc(1, sizeof(HTTP_CLIENT_REQUEST));
+    if (!request) {
+        return NULL;
+    }
+    
+    request->method = strdup(method);
+    request->url = strdup(url);
+    
+    if (!request->method || !request->url) {
+        http_client_request_destroy(request);
+        return NULL;
+    }
+    
+    /* Initialize headers */
+    request->header_capacity = INITIAL_HEADER_CAPACITY;
+    request->header_names = (char**)calloc(request->header_capacity, sizeof(char*));
+    request->header_values = (char**)calloc(request->header_capacity, sizeof(char*));
+    
+    if (!request->header_names || !request->header_values) {
+        http_client_request_destroy(request);
+        return NULL;
+    }
+    
+    /* Set defaults */
+    request->timeout_seconds = DEFAULT_TIMEOUT;
+    request->follow_redirects = 1;
+    request->max_redirects = DEFAULT_MAX_REDIRECTS;
+    request->verify_ssl = 1;
+    
+    return request;
+}
+
+void http_client_request_destroy(HTTP_CLIENT_REQUEST *request)
+{
+    if (!request) return;
+    
+    free(request->url);
+    free(request->method);
+    free(request->body);
+    
+    for (size_t i = 0; i < request->header_count; i++) {
+        free(request->header_names[i]);
+        free(request->header_values[i]);
+    }
+    
+    free(request->header_names);
+    free(request->header_values);
+    free(request);
+}
+
+int http_client_request_add_header(HTTP_CLIENT_REQUEST *request, 
+                                    const char *name, 
+                                    const char *value)
+{
+    if (!request || !name || !value) {
+        return FRAMEWORK_ERROR_NULL_PTR;
+    }
+    
+    /* Expand capacity if needed */
+    if (request->header_count >= request->header_capacity) {
+        size_t new_capacity = request->header_capacity * 2;
+        char **new_names = (char**)realloc(request->header_names, 
+                                           new_capacity * sizeof(char*));
+        char **new_values = (char**)realloc(request->header_values, 
+                                            new_capacity * sizeof(char*));
+        
+        if (!new_names || !new_values) {
+            return FRAMEWORK_ERROR_MEMORY;
+        }
+        
+        request->header_names = new_names;
+        request->header_values = new_values;
+        request->header_capacity = new_capacity;
+    }
+    
+    request->header_names[request->header_count] = strdup(name);
+    request->header_values[request->header_count] = strdup(value);
+    
+    if (!request->header_names[request->header_count] || 
+        !request->header_values[request->header_count]) {
+        return FRAMEWORK_ERROR_MEMORY;
+    }
+    
+    request->header_count++;
+    return FRAMEWORK_SUCCESS;
+}
+
+int http_client_request_set_body(HTTP_CLIENT_REQUEST *request, 
+                                  const char *body, 
+                                  size_t length)
+{
+    if (!request || !body) {
+        return FRAMEWORK_ERROR_NULL_PTR;
+    }
+    
+    free(request->body);
+    
+    if (length == 0) {
+        length = strlen(body);
+    }
+    
+    request->body = (char*)malloc(length + 1);
+    if (!request->body) {
+        return FRAMEWORK_ERROR_MEMORY;
+    }
+    
+    memcpy(request->body, body, length);
+    request->body[length] = '\0';
+    request->body_length = length;
+    
+    return FRAMEWORK_SUCCESS;
+}
+
+void http_client_request_set_timeout(HTTP_CLIENT_REQUEST *request, int timeout_seconds)
+{
+    if (request) {
+        request->timeout_seconds = timeout_seconds;
+    }
+}
+
+void http_client_request_set_verify_ssl(HTTP_CLIENT_REQUEST *request, int verify)
+{
+    if (request) {
+        request->verify_ssl = verify;
+    }
+}
+
+void http_client_request_set_follow_redirects(HTTP_CLIENT_REQUEST *request, 
+                                               int follow, 
+                                               int max_redirects)
+{
+    if (request) {
+        request->follow_redirects = follow;
+        request->max_redirects = max_redirects;
+    }
+}
+
+/* ==================== Response Management ==================== */
+
+void http_client_response_destroy(HTTP_CLIENT_RESPONSE *response)
+{
+    if (!response) return;
+    
+    free(response->body);
+    free(response->error_message);
+    
+    for (size_t i = 0; i < response->header_count; i++) {
+       ssize_t socket_read(int sockfd, SSL *ssl, void *buf, size_t len)
+{
+    if (ssl) {
+        return SSL_read(ssl, buf, len);
+    }
+    return recv(sockfd, buf, len, 0);
+}
+
+static ssize_t socket_write(int sockfd, SSL *ssl, const void *buf, size_t len)
+{
+    if (ssl) {
+        return SSL_write(ssl, buf, len);
+    }
+    return send(sockfd, buf, len, 0);
+}
+
+static  free(response->header_names[i]);
+        free(response->header_values[i]);
+    }
+    
+    free(response->header_names);
+    free(response->header_values);
+    free(response);
+}
+
+const char* http_client_response_get_header(HTTP_CLIENT_RESPONSE *response, 
+                                             const char *name)
+{
+    if (!response || !name) {
+        return NULL;
+    }
+    
+    for (size_t i = 0; i < response->header_count; i++) {
+        if (strcasecmp(response->header_names[i], name) == 0) {
+            return response->header_values[i];
+        }
+    }
+    
+    return NULL;
+}
+
+/* ==================== Socket Operations ==================== */
+
+static int connect_with_timeout(const char *host, int port, int timeout_seconds)
+{
+    struct addrinfo hints, *result, *rp;
+    int sockfd = -1;
+    
+    memset(&hints, 0, sizeof(hints));
+    hints.ai_family = AF_UNSPEC;
+    hints.ai_socktype = SOCK_STREAM;
+    
+    char port_str[16];
+    snprintf(port_str, sizeof(port_str), "%d", port);
+    
+    if (getaddrinfo(host, port_str, &hints, &result) != 0) {
+        return -1;
+    }
+    
+    for (rp = result; rp != NULL; rp = rp->ai_next) {
+        sockfd = socket(rp->ai_family, rp->ai_socktype, rp->ai_protocol);
+        if (sockfd == -1) continue;
+        
+        /* Set non-blocking */
+        int flags = fcntl(sockfd, F_GETFL, 0);
+        fcntl(sockfd, F_SETFL, flags | O_NONBLOCK);
+        
+        /* Attempt connection */
+        int result_connect = connect(sockfd, rp->ai_addr, rp->ai_addrlen);
+        
+        if (result_connect == -1 && errno != EINPROGRESS) {
+            close(sockfd);
+            sockfd = -1;
+            continue;
+        }
+        
+        if (result_connect == 0) {
+            /* Connected immediately */
+            fcntl(sockfd, F_SETFL, flags); /* Restore blocking */
+            break;
+        }
+        
+        /* Wait for connection with timeout */
+        fd_set writefds;
+        FD_ZERO(&writefds);
+        FD_SET(sockfd, &writefds);
+        
+        struct timeval tv;
+        tv.tv_sec = timeout_seconds;
+        tv.tv_usec = 0;
+        
+        if (select(sockfd + 1, NULL, &writefds, NULL, &tv) > 0) {
+            int error = 0;
+            socklen_t len = sizeof(error);
+            getsockopt(sockfd, SOL_SOCKET, SO_ERROR, &error, &len);
+            
+            if (error == 0) {
+                fcntl(sockfd, F_SETFL, flags); /* Restore blocking */
+                break;
+            }
+        }
+        
+        close(sockfd);
+        sockfd = -1;
+    }
+    
+    freeaddrinfo(result);
+    return sockfd;
+}
+
+/* ==================== HTTP Response Parsing ==================== */
+
+static HTTP_CLIENT_RESPONSE* parse_http_response(const char *response_data, size_t response_len)
+{
+    HTTP_CLIENT_RESPONSE *response = (HTTP_CLIENT_RESPONSE*)calloc(1, sizeof(HTTP_CLIENT_RESPONSE));
+    if (!response) {
+        return NULL;
+    }
+    
+    /* Find end of headers */
+    const char *headers_end = strstr(response_data, "\r\n\r\n");
+    if (!headers_end) {
+        response->error_message = strdup("Invalid HTTP response");
+        return response;
+    }
+    
+    /* Parse status line */
+    int major, minor;
+    if (sscanf(response_data, "HTTP/%d.%d %d", &major, &minor, &response->status_code) != 3) {
+        response->error_message = strdup("Failed to parse status line");
+        return response;
+    }
+    
+    /* Parse headers */
+    const char *line_start = response_data;
+    const char *line_end = strstr(line_start, "\r\n");
+    
+    if (line_end) {
+        line_start = line_end + 2; /* Skip status line */
+    }
+    
+    response->header_capacity = INITIAL_HEADER_CAPACITY;
+    response->header_names = (char**)calloc(response->header_capacity, sizeof(char*));
+    response->header_values = (char**)calloc(response->header_capacity, sizeof(char*));
+    
+    while (line_start < headers_end) {
+        line_end = strstr(line_start, "\r\n");
+        if (!line_end || line_end == line_start) break;
+        
+        const char *colon = strchr(line_start, ':');
+        if (colon && colon < line_end) {
+            size_t name_len = colon - line_start;
+            const char *value_start = colon + 1;
+            
+            /* Skip leading whitespace in value */
+            while (value_start < line_end && (*value_start == ' ' || *value_start == '\t')) {
+                value_start++;
+            }
+            
+            size_t value_len = line_end - value_start;
+            
+            if (response->header_count >= response->header_capacity) {
+                size_t new_capacity = response->header_capacity * 2;
+                response->header_names = (char**)realloc(response->header_names, 
+                                                         new_capacity * sizeof(char*));
+                response->header_values = (char**)realloc(response->header_values, 
+                                                          new_capacity * sizeof(char*));
+                response->header_capacity = new_capacity;
+            }
+            
+            response->header_names[response->header_count] = strndup(line_start, name_len);
+            response->header_values[response->header_count] = strndup(value_start, value_len);
+            response->header_count++;
+        }
+        
+        line_start = line_end + 2;
+    }
+    
+    /* Extract body */
+    const char *body_start = headers_end + 4;
+    size_t body_len = response_len - (body_start - response_data);
+    
+    if (body_len > 0) {
+        response->body = (char*)malloc(body_len + 1);
+        if (response->body) {
+            memcpy(response->body, body_start, body_len);
+    /* Initialize OpenSSL if needed */
+    if (!g_ssl_initialized) {
+        init_openssl();
+    }
+    
+    struct timeval start_time, end_time;
+    gettimeofday(&start_time, NULL);
+    
+    /* Parse URL */
+    URL_PARTS url_parts;
+    if (parse_url(request->url, &url_parts) != FRAMEWORK_SUCCESS) {
+        HTTP_CLIENT_RESPONSE *response = (HTTP_CLIENT_RESPONSE*)calloc(1, sizeof(HTTP_CLIENT_RESPONSE));
+        response->error_message = strdup("Invalid URL");
+        return response;
+    }
+    
+    /* Determine if HTTPS */
+    int use_ssl = (strcasecmp(url_parts.protocol, "https") == 0);
+    
+    /* Connect to server */
+    int sockfd = connect_with_timeout(url_parts.host, url_parts.port, request->timeout_seconds);
+    if (sockfd < 0) {
+        HTTP_CLIENT_RESPONSE *response = (HTTP_CLIENT_RESPONSE*)calloc(1, sizeof(HTTP_CLIENT_RESPONSE));
+        response->error_message = strdup("Connection failed");
+        return response;
+    }
+    
+    /* Setup SSL if needed */
+    SSL *ssl = NULL;
+    if (use_ssl) {
+        if (!g_ssl_ctx) {
+            close(sockfd);
+            HTTP_CLIENT_RESPONSE *response = (HTTP_CLIENT_RESPONSE*)calloc(1, sizeof(HTTP_CLIENT_RESPONSE));
+            response->error_message = strdup("SSL not initialized");
+            return response;
+        }
+        
+        ssl = SSL_new(g_ssl_ctx);
+        if (!ssl) {
+            close(sockfd);
+            HTTP_CLIENT_RESPONSE *response = (HTTP_CLIENT_RESPONSE*)calloc(1, sizeof(HTTP_CLIENT_RESPONSE));
+            response->error_message = strdup("Failed to create SSL connection");
+            return response;
+        }
+        
+        SSL_set_fd(ssl, sockfd);
+        
+        /* Set SNI hostname */
+        SSL_set_tlsext_host_name(ssl, url_parts.host);
+        
+        /* Disable verification if requested */
+        if (!request->verify_ssl) {
+            SSL_set_verify(ssl, SSL_VERIFY_NONE, NULL);
+        }
+        
+        /* Perform SSL handshake */
+        if (SSL_connect(ssl) != 1) {
+            char error_buf[256];
+            ERR_error_string_n(ERR_get_error(), error_buf, sizeof(error_buf));
+            SSL_free(ssl);
+            close(sockfd);
+            HTTP_CLIENT_RESPONSE *response = (HTTP_CLIENT_RESPONSE*)calloc(1, sizeof(HTTP_CLIENT_RESPONSE));
+            response->error_message = strdup(error_buf);
+            framework_log(LOG_LEVEL_ERROR, "SSL handshake failed: %s", error_buf);
+            return response;
+        }
+        
+        framework_log(LOG_LEVEL_DEBUG, "SSL connection established");
+    }
+    ocket_write(sockfd, ssl, request_buf, offset) < 0) {
+        if (ssl) SSL_free(ssl);
+        close(sockfd);
+        HTTP_CLIENT_RESPONSE *response = (HTTP_CLIENT_RESPONSE*)calloc(1, sizeof(HTTP_CLIENT_RESPONSE));
+        response->error_message = strdup("Failed to send request");
+        return response;
+    }
+    
+    /* Send body if present */
+    if (request->body && request->body_length > 0) {
+        if (socket_write(sockfd, ssl, request->body, request->body_length) < 0) {
+            if (ssl) SSL_free(ssl);
+    int sockfd = connect_with_timeout(url_parts.host, url_parts.port, request->timeout_seconds);
+    if (sockfd < 0) {
+        HTTP_CLIENT_RESPONSE *response = (HTTP_CLIENT_RESPONSE*)calloc(1, sizeof(HTTP_CLIENT_RESPONSE));
+        response->error_message = strdup("Connection failed");
+        return response;
+    }
+    
+    /* Build HTTP request */
+    char request_buf[8192];
+    int offset = snprintf(request_buf, sizeof(request_buf),
+                         "%s %s HTTP/1.1\r\n"
+                         "Host: %s\r\n"
+                         "User-Agent: Equinox-Framework/1.0\r\n"
+                         "Accept: */*\r\n"
+                         "Connection: close\r\n",
+                         request->method, url_parts.path, url_parts.host);
+    
+    /* Add custom headers */
+    for (size_t i = 0; i < request->header_count; i++) {
+        offset += snprintf(request_buf + offset, sizeof(request_buf) - offset,
+                          "%s: %s\r\n",
+                          request->header_names[i], request->header_values[i]);
+    }
+    
+    /* Add body if present */
+    if (request->body && request->body_length > 0) {
+        offset += snprintf(request_buf + offset, sizeof(request_buf) - offset,
+                          "Content-Length: %zu\r\n", request->body_length);
+    }
+    
+    offset += snprintf(request_buf + offset, sizeof(request_buf) - offset, "\r\n");
+    
+    /* Send request */
+    if (send(sockfd, request_buf, offset, 0) < 0) {
+        close(sockfd);
+        HTTP_CLIENT_RESPONSE *response = (HTTP_CLIENT_RESPONSE*)calloc(1, sizeof(HTTP_CLIENT_RESPONSE));
+        response->error_message = strdup("Failed to send request");
+        return response;
+    }
+    
+    /* Send body if present */
+    if (request->body && request->body_length > 0) {
+        if (send(sockfd, request->body, request->body_length, 0) < 0) {
+            close(sockfd);
+            HTTP_CLIENT_RESPONSE *response = (HTTP_CLIENT_RESPONSE*)calloc(1, sizeof(HTTP_CLIENT_RESPONSE));
+            response->error_message = strdup("Failed to send body");
+            return response;
+        }
+    }
+    
+    /* Receive response */
+    char *response_buf = (char*)malloc(INITIAL_BUFFER_SIZE);
+    size_t response_capacity = INITIAL_BUFFER_SIZE;
+    size_t response_len = 0;
+    
+    while (1) {
+        if (if (ssl) SSL_free(ssl);
+            close(sockfd);
+            HTTP_CLIENT_RESPONSE *response = (HTTP_CLIENT_RESPONSE*)calloc(1, sizeof(HTTP_CLIENT_RESPONSE));
+            response->error_message = strdup("Response too large");
+            return response;
+        }
+        
+        if (response_len >= response_capacity - 1) {
+            response_capacity *= 2;
+            char *new_buf = (char*)realloc(response_buf, response_capacity);
+            if (!new_buf) {
+                free(response_buf);
+                if (ssl) SSL_free(ssl);
+                close(sockfd);
+                HTTP_CLIENT_RESPONSE *response = (HTTP_CLIENT_RESPONSE*)calloc(1, sizeof(HTTP_CLIENT_RESPONSE));
+                response->error_message = strdup("Out of memory");
+                return response;
+            }
+            response_buf = new_buf;
+        }
+        
+        ssize_t bytes = socket_read(sockfd, ssl, response_buf + response_len, 
+                                    response_capacity - response_len - 1);
+        
+        if (bytes <= 0) break;
+        response_len += bytes;
+    }
+    
+    if (ssl) {
+        SSL_shutdown(ssl);
+        SSL_free(ssl);
+    }    response_len += bytes;
+    }
+    
+    close(sockfd);
+    
+    if (response_len == 0) {
+        free(response_buf);
+        HTTP_CLIENT_RESPONSE *response = (HTTP_CLIENT_RESPONSE*)calloc(1, sizeof(HTTP_CLIENT_RESPONSE));
+        response->error_message = strdup("Empty response");
+        return response;
+    }
+    
+    response_buf[response_len] = '\0';
+    
+    /* Parse response */
+    HTTP_CLIENT_RESPONSE *response = parse_http_response(response_buf, response_len);
+    free(response_buf);
+    
+    /* Calculate elapsed time */
+    gettimeofday(&end_time, NULL);
+    response->elapsed_time_ms = (end_time.tv_sec - start_time.tv_sec) * 1000.0 +
+                                (end_time.tv_usec - start_time.tv_usec) / 1000.0;
+    
+    return response;
+}
+
+/* ==================== Convenience Functions ==================== */
+
+HTTP_CLIENT_RESPONSE* http_client_get(const char *url)
+{
+    HTTP_CLIENT_REQUEST *request = http_client_request_create("GET", url);
+    if (!request) {
+        return NULL;
+    }
+    
+    HTTP_CLIENT_RESPONSE *response = http_client_execute(request);
+    http_client_request_destroy(request);
+    
+    return response;
+}
+
+HTTP_CLIENT_RESPONSE* http_client_post_json(const char *url, const char *json_body)
+{
+    HTTP_CLIENT_REQUEST *request = http_client_request_create("POST", url);
+    if (!request) {
+        return NULL;
+    }
+    
+    http_client_request_add_header(request, "Content-Type", "application/json");
+    http_client_request_set_body(request, json_body, 0);
+    
+    HTTP_CLIENT_RESPONSE *response = http_client_execute(request);
+    http_client_request_destroy(request);
+    
+    return response;
+}
+
+HTTP_CLIENT_RESPONSE* http_client_post_form(const char *url, const char *form_data)
+{
+    HTTP_CLIENT_REQUEST *request = http_client_request_create("POST", url);
+    if (!request) {
+        return NULL;
+    }
+    
+    http_client_request_add_header(request, "Content-Type", "application/x-www-form-urlencoded");
+    http_client_request_set_body(request, form_data, 0);
+    
+    HTTP_CLIENT_RESPONSE *response = http_client_execute(request);
+    http_client_request_destroy(request);
+    
+    return response;
+}

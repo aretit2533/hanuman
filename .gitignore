@@ -1,0 +1,46 @@
+# Build artifacts
+build/
+lib/
+*.o
+*.a
+*.so
+*.dylib
+
+# Executables
+demo_app
+*.exe
+*.out
+
+# Debug files
+*.dSYM/
+*.su
+*.idb
+*.pdb
+
+# Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Core dumps
+core
+core.*
+
+# Dependency files
+*.d
+
+# Generated documentation
+docs/html/
+docs/latex/
+
+# Test coverage
+*.gcda
+*.gcno
+*.gcov
+coverage/
+
+# Static analysis
+cppcheck-build/

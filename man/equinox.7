@@ -1,0 +1,175 @@
+.TH EQUINOX 7 "2025-12-19" "Equinox Framework 1.0" "Equinox Framework Manual"
+.SH NAME
+equinox \- lightweight modular C framework for building extensible applications
+.SH DESCRIPTION
+Equinox is a comprehensive C framework for building modular, extensible applications with built-in HTTP/1.1 and HTTP/2 server support. It provides a complete application lifecycle management system, module dependency resolution, service controllers, and concurrent connection handling.
+.SH ARCHITECTURE
+The Equinox Framework consists of the following core components:
+.TP
+.B Application
+The main container that manages the lifecycle of modules and services. Provides initialization, startup, and shutdown coordination.
+.TP
+.B Modules
+Reusable functional components with lifecycle callbacks (init, start, stop, cleanup) and dependency management. Modules can declare dependencies on other modules.
+.TP
+.B Service Controllers
+Request/response handlers that expose named operations. Services can be registered with an application and participate in the application lifecycle.
+.TP
+.B HTTP Server
+Full-featured web server supporting HTTP/1.1 and HTTP/2 with:
+.RS
+.IP \(bu 2
+EPOLL-based concurrent connection handling (up to 1000 connections)
+.IP \(bu 2
+Path parameters with dynamic route matching (/api/users/:id)
+.IP \(bu 2
+Query string parsing with URL decoding
+.IP \(bu 2
+Non-blocking I/O with edge-triggered notifications
+.IP \(bu 2
+Automatic HTTP/2 protocol detection and negotiation
+.IP \(bu 2
+Binary framing and HPACK header compression for HTTP/2
+.RE
+.SH LIFECYCLE FLOW
+A typical Equinox application follows this lifecycle:
+.PP
+.nf
+1. Framework Init
+2. Application Create
+3. Register Modules and Services
+4. Application Initialize (calls module/service init)
+5. Application Start (calls module/service start)
+6. [Application Running - Process Requests]
+7. Application Stop (calls service/module stop)
+8. Application Cleanup
+9. Framework Shutdown
+.fi
+.SH FEATURES
+.SS Core Framework
+.IP \(bu 2
+Application lifecycle management
+.IP \(bu 2
+Module system with dependency resolution
+.IP \(bu 2
+Service controllers for request/response handling
+.IP \(bu 2
+Integrated logging system with multiple levels
+.IP \(bu 2
+Comprehensive error handling
+.SS HTTP Server
+.IP \(bu 2
+HTTP/1.1 and HTTP/2 protocol support
+.IP \(bu 2
+EPOLL concurrent connection handling
+.IP \(bu 2
+RESTful route registration (GET, POST, PUT, PATCH, DELETE)
+.IP \(bu 2
+Path parameters (:param syntax)
+.IP \(bu 2
+Query string parsing with URL decoding
+.IP \(bu 2
+Header management
+.IP \(bu 2
+JSON response helpers
+.IP \(bu 2
+Automatic protocol detection
+.SH FILES
+.TP
+.B /usr/local/lib/libequinox.a
+Static library containing the framework implementation
+.TP
+.B /usr/local/include/equinox/
+Header files for the framework API
+.SH EXAMPLE
+A minimal Equinox HTTP server application:
+.PP
+.nf
+#include <framework.h>
+#include <http_server.h>
+
+void hello_handler(HTTP_REQUEST *req, HTTP_RESPONSE *res, 
+                  void *data) {
+    const char *name = http_request_get_query_param(req, "name");
+    char body[256];
+    snprintf(body, sizeof(body), "Hello, %s!", 
+             name ? name : "World");
+    http_response_set_text(res, body);
+}
+
+int main(void) {
+    framework_init();
+    
+    HTTP_SERVER *server = http_server_create("0.0.0.0", 8080);
+    http_server_add_route(server, HTTP_METHOD_GET,
+                         "/hello", hello_handler, NULL);
+    
+    http_server_start(server);
+    http_server_run(server);
+    
+    http_server_destroy(server);
+    framework_shutdown();
+    return 0;
+}
+.fi
+.SH BUILD SYSTEM
+The framework uses Make for building:
+.TP
+.B make debug
+Build debug version with symbols
+.TP
+.B make release
+Build optimized release version
+.TP
+.B make clean
+Remove build artifacts
+.TP
+.B make install
+Install library to system (requires sudo)
+.TP
+.B make run-param
+Run the parameter demo application
+.SH STANDARDS
+.IP \(bu 2
+C Standard: C99
+.IP \(bu 2
+POSIX: _POSIX_C_SOURCE 200809L
+.IP \(bu 2
+HTTP/1.1: RFC 7230-7235
+.IP \(bu 2
+HTTP/2: RFC 7540, RFC 7541 (HPACK)
+.SH PERFORMANCE
+The HTTP server can handle:
+.IP \(bu 2
+1000+ concurrent connections using EPOLL
+.IP \(bu 2
+86% performance improvement over blocking I/O
+.IP \(bu 2
+Non-blocking edge-triggered event notifications
+.IP \(bu 2
+Efficient memory management with dynamic arrays
+.SH DOCUMENTATION
+Complete documentation is available in:
+.IP \(bu 2
+Man pages for each API component
+.IP \(bu 2
+HTTP_SERVER.md \- HTTP server guide
+.IP \(bu 2
+HTTP2_SUPPORT.md \- HTTP/2 documentation
+.IP \(bu 2
+PATH_PARAMETERS.md \- Path parameters and query strings
+.IP \(bu 2
+EPOLL_CONCURRENT.md \- Concurrent connection handling
+.IP \(bu 2
+API.md \- Complete API reference
+.SH SEE ALSO
+.BR application (3),
+.BR module (3),
+.BR service_controller (3),
+.BR http_server (3),
+.BR http_route (3),
+.BR framework (3)
+.SH AUTHOR
+Equinox Framework Development Team
+.SH BUGS
+Report bugs to the project issue tracker.

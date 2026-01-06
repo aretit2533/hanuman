@@ -1,0 +1,132 @@
+.TH APPLICATION 3 "2025-12-19" "Equinox Framework 1.0" "Equinox Framework Manual"
+.SH NAME
+application \- application lifecycle management functions
+.SH SYNOPSIS
+.nf
+.B #include <application.h>
+.PP
+.BI "APPLICATION* application_create(const char *" name ", int " version );
+.BI "void application_destroy(APPLICATION *" app );
+.BI "int application_initialize(APPLICATION *" app );
+.BI "int application_start(APPLICATION *" app );
+.BI "int application_stop(APPLICATION *" app );
+.BI "int application_add_module(APPLICATION *" app ", MODULE *" module );
+.BI "int application_add_service(APPLICATION *" app ", SERVICE_CONTROLLER *" service );
+.BI "MODULE* application_get_module(APPLICATION *" app ", const char *" name );
+.BI "const char* application_get_name(APPLICATION *" app );
+.BI "int application_get_version(APPLICATION *" app );
+.fi
+.SH DESCRIPTION
+The application API provides functions for creating and managing the lifecycle of an Equinox Framework application. An application serves as the main container for modules and service controllers.
+.PP
+.BR application_create ()
+creates a new application instance with the specified
+.I name
+and
+.IR version .
+Returns a pointer to the APPLICATION structure or NULL on failure.
+.PP
+.BR application_destroy ()
+destroys an application instance and frees all associated resources. The application must be stopped before calling this function.
+.PP
+.BR application_initialize ()
+initializes the application and all registered modules and services. This calls the init callback for each module and service.
+.PP
+.BR application_start ()
+starts the application and all registered modules and services. This calls the start callback for each module and service. The application must be initialized first.
+.PP
+.BR application_stop ()
+stops the application and all registered modules and services. This calls the stop callback for each module and service.
+.PP
+.BR application_add_module ()
+registers a module with the application. The module will be initialized and started when the application is initialized and started.
+.PP
+.BR application_add_service ()
+registers a service controller with the application. The service will be initialized and started when the application is initialized and started.
+.PP
+.BR application_get_module ()
+retrieves a registered module by
+.IR name .
+Returns a pointer to the MODULE structure or NULL if not found.
+.PP
+.BR application_get_name ()
+returns the application name as a string.
+.PP
+.BR application_get_version ()
+returns the application version number as an integer.
+.SH RETURN VALUE
+.BR application_create ()
+returns a pointer to APPLICATION on success, or NULL on failure.
+.PP
+.BR application_initialize (),
+.BR application_start (),
+.BR application_stop (),
+.BR application_add_module (),
+and
+.BR application_add_service ()
+return FRAMEWORK_SUCCESS (0) on success, or a negative error code on failure:
+.RS
+.TP
+.B FRAMEWORK_ERROR_NULL_PTR
+A required pointer parameter was NULL
+.TP
+.B FRAMEWORK_ERROR_STATE
+The application is in an invalid state for the operation
+.TP
+.B FRAMEWORK_ERROR_MEMORY
+Memory allocation failed
+.RE
+.PP
+.BR application_get_module ()
+returns a pointer to MODULE on success, or NULL if not found.
+.PP
+.BR application_get_name ()
+returns a pointer to the application name string.
+.PP
+.BR application_get_version ()
+returns the version number as an integer.
+.SH EXAMPLE
+.nf
+#include <framework.h>
+#include <application.h>
+
+int main(void) {
+    framework_init();
+    
+    /* Create application */
+    APPLICATION *app = application_create("MyApp", 1);
+    if (!app) {
+        fprintf(stderr, "Failed to create application\\n");
+        return 1;
+    }
+    
+    /* Initialize and start */
+    if (application_initialize(app) != FRAMEWORK_SUCCESS) {
+        fprintf(stderr, "Failed to initialize\\n");
+        application_destroy(app);
+        return 1;
+    }
+    
+    if (application_start(app) != FRAMEWORK_SUCCESS) {
+        fprintf(stderr, "Failed to start\\n");
+        application_destroy(app);
+        return 1;
+    }
+    
+    /* Application running... */
+    
+    /* Cleanup */
+    application_stop(app);
+    application_destroy(app);
+    framework_shutdown();
+    
+    return 0;
+}
+.fi
+.SH SEE ALSO
+.BR module (3),
+.BR service_controller (3),
+.BR framework (3),
+.BR http_server (3)
+.SH AUTHOR
+Equinox Framework Development Team

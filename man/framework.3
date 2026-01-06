@@ -1,0 +1,134 @@
+.TH FRAMEWORK 3 "2025-12-19" "Equinox Framework 1.0" "Equinox Framework Manual"
+.SH NAME
+framework \- core framework initialization and utility functions
+.SH SYNOPSIS
+.nf
+.B #include <framework.h>
+.PP
+.B Initialization
+.BI "int framework_init(void);"
+.BI "int framework_shutdown(void);"
+.PP
+.B Logging
+.BI "void framework_log(LOG_LEVEL " level ", const char *" format ", ...);"
+.BI "void framework_set_log_level(LOG_LEVEL " level );
+.PP
+.B Error Codes
+.B #define FRAMEWORK_SUCCESS          0
+.B #define FRAMEWORK_ERROR_NULL_PTR   -1
+.B #define FRAMEWORK_ERROR_INVALID    -2
+.B #define FRAMEWORK_ERROR_MEMORY     -3
+.B #define FRAMEWORK_ERROR_NOT_FOUND  -4
+.B #define FRAMEWORK_ERROR_EXISTS     -5
+.B #define FRAMEWORK_ERROR_STATE      -6
+.B #define FRAMEWORK_ERROR_DEPENDENCY -7
+.B #define FRAMEWORK_ERROR_CALLBACK   -8
+.fi
+.SH DESCRIPTION
+The framework API provides core initialization, logging, and utility functions for the Equinox Framework.
+.PP
+.BR framework_init ()
+initializes the framework and must be called before any other framework functions. This sets up the logging system and internal data structures.
+.PP
+.BR framework_shutdown ()
+shuts down the framework and releases all global resources. This should be called when the application is terminating.
+.PP
+.BR framework_log ()
+writes a log message with the specified
+.I level
+and formatted message. This function accepts printf-style format strings and arguments.
+.PP
+.BR framework_set_log_level ()
+sets the minimum log level for messages to be displayed. Messages below this level will be filtered out.
+.SH LOG LEVELS
+The following log levels are available, in order of increasing severity:
+.TP
+.B LOG_LEVEL_DEBUG
+Detailed information for debugging
+.TP
+.B LOG_LEVEL_INFO
+Informational messages about normal operation
+.TP
+.B LOG_LEVEL_WARNING
+Warning messages about potential issues
+.TP
+.B LOG_LEVEL_ERROR
+Error messages about failures
+.SH ERROR CODES
+Framework functions return error codes to indicate success or failure:
+.TP
+.B FRAMEWORK_SUCCESS
+Operation completed successfully (value: 0)
+.TP
+.B FRAMEWORK_ERROR_NULL_PTR
+A required pointer parameter was NULL
+.TP
+.B FRAMEWORK_ERROR_INVALID
+Invalid parameter or data
+.TP
+.B FRAMEWORK_ERROR_MEMORY
+Memory allocation failed
+.TP
+.B FRAMEWORK_ERROR_NOT_FOUND
+Requested resource was not found
+.TP
+.B FRAMEWORK_ERROR_EXISTS
+Resource already exists
+.TP
+.B FRAMEWORK_ERROR_STATE
+Operation invalid for current state
+.TP
+.B FRAMEWORK_ERROR_DEPENDENCY
+Dependency requirement not met
+.TP
+.B FRAMEWORK_ERROR_CALLBACK
+Callback function failed
+.SH RETURN VALUE
+.BR framework_init ()
+and
+.BR framework_shutdown ()
+return FRAMEWORK_SUCCESS (0) on success, or a negative error code on failure.
+.PP
+.BR framework_log ()
+and
+.BR framework_set_log_level ()
+do not return a value.
+.SH EXAMPLE
+.nf
+#include <framework.h>
+
+int main(void) {
+    /* Initialize framework */
+    if (framework_init() != FRAMEWORK_SUCCESS) {
+        fprintf(stderr, "Framework initialization failed\\n");
+        return 1;
+    }
+    
+    /* Set log level */
+    framework_set_log_level(LOG_LEVEL_INFO);
+    
+    /* Log messages */
+    framework_log(LOG_LEVEL_INFO, "Application starting");
+    framework_log(LOG_LEVEL_DEBUG, "Debug info: value=%d", 42);
+    framework_log(LOG_LEVEL_ERROR, "An error occurred: %s", "test");
+    
+    /* Application logic here */
+    
+    /* Shutdown framework */
+    framework_shutdown();
+    return 0;
+}
+.fi
+.SH NOTES
+.BR framework_init ()
+must be called before using any other framework functions.
+.PP
+Log messages are written to standard output with timestamps and log level indicators.
+.PP
+The default log level is LOG_LEVEL_INFO. Debug messages are only shown if the log level is set to LOG_LEVEL_DEBUG.
+.SH SEE ALSO
+.BR application (3),
+.BR module (3),
+.BR http_server (3)
+.SH AUTHOR
+Equinox Framework Development Team
