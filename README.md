@@ -1597,16 +1597,18 @@ wscat -c ws://localhost:8080/ws
 
 ## License
 
-This framework is provided as-is for educational and development purposes.
+This project is licensed under the [MIT License](LICENSE).
 
 ## Contributing
 
-Contributions are welcome! Please ensure:
-- Code follows existing style conventions
-- Comprehensive error handling and logging
-- Memory leak testing with valgrind
-- Documentation for new features
-- Example applications demonstrating usage
+Contributions are welcome! Please read [CONTRIBUTING.md](CONTRIBUTING.md)
+for build instructions, coding conventions, and the pull request process.
+This project follows the [Contributor Covenant Code of Conduct](CODE_OF_CONDUCT.md).
+
+## Security
+
+Please see [SECURITY.md](SECURITY.md) for supported versions and
+instructions on privately reporting security vulnerabilities.
 
 ## Roadmap
 
