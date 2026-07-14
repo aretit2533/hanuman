@@ -1,0 +1,25 @@
+# Build artifacts (rebuilt inside the image)
+build/
+lib/
+*.o
+*.a
+*.so
+
+# VCS / editor
+.git/
+.gitignore
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Docs (not needed to build)
+docs/
+man/
+*.md
+
+# Misc
+test_concurrent.sh
+test_http2.sh

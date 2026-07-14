@@ -100,9 +100,9 @@ See `examples/unified_app.c` for a full working example showing:
 
 ## Documentation
 
-- [Unified Event Loop Guide](docs/UNIFIED_EVENT_LOOP.md) - Complete documentation
-- [Unified App Example](examples/unified_app.c) - Full source code
-- [API Reference](src/include/application.h) - Function declarations
+- [Unified Event Loop Guide](UNIFIED_EVENT_LOOP.md) - Complete documentation
+- [Unified App Example](../../examples/unified_app.c) - Full source code
+- [API Reference](../../src/include/core/application.h) - Function declarations
 
 ## Benefits
 

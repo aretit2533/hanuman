@@ -47,7 +47,25 @@ A comprehensive, production-ready C framework for building high-performance web 
 - **Error Handling**: Comprehensive delivery reports and error callbacks
 - **High Performance**: Built on librdkafka for production use
 
-### 📄 JSON Processing
+### �️ MongoDB Integration
+- **Full CRUD Operations**: Insert, find, update, delete documents
+- **Async Support**: Non-blocking database operations with callbacks
+- **Aggregation Pipeline**: Complex data transformations
+- **Index Management**: Create and manage database indexes
+- **Transactions**: ACID-compliant operations
+- **SSL/TLS Support**: Secure database connections
+- **Connection Pooling**: Efficient resource management
+
+### 🔌 Real-Time Communication
+- **WebSocket Support**: RFC 6455 compliant WebSocket server and client
+- **Socket.IO Integration**: Event-driven real-time communication
+- **Rooms & Namespaces**: Organize clients for targeted messaging
+- **Broadcasting**: Send messages to all clients or specific groups
+- **Binary Support**: Handle both text and binary data
+- **Acknowledgements**: Request/response patterns for reliable messaging
+- **Thread-Safe**: Concurrent connections with proper synchronization
+
+### �📄 JSON Processing
 - **Full JSON Parser**: Parse JSON strings to structured data
 - **JSON Builder**: Construct JSON objects and arrays programmatically
 - **Schema Validation**: Validate JSON against schemas
@@ -101,13 +119,65 @@ make run-http-client     # HTTP client demo
 make run-unified         # Unified HTTP+Kafka demo
 ```
 
+### Building with Docker
+
+A multi-stage [Dockerfile](Dockerfile) is provided that installs every
+dependency (OpenSSL, zlib, librdkafka, MongoDB C driver, and the
+OpenTelemetry C++ SDK built from source) and compiles the framework - no
+local toolchain setup required.
+
+```bash
+# Build the image (builds opentelemetry-cpp from source, then the framework)
+docker build -t hanuman-framework .
+
+# Run the default demo (HTTP server on :8080)
+docker run --rm -p 8080:8080 hanuman-framework
+
+# Run a different demo binary
+docker run --rm -p 3000:3000 hanuman-framework ./build/socketio_chat_server
+```
+
+#### SDK base image (build your own apps against the framework)
+
+An additional `sdk` target produces a reusable base image with the compiler
+toolchain, all dev headers, `libequinox.a`, and the OpenTelemetry static libs
+already built - so other projects can `FROM` it and just compile their own
+code, without rebuilding OpenTelemetry or any dependency:
+
+```bash
+docker build --target sdk -t hanuman-framework:sdk .
+```
+
+```dockerfile
+# your-app/Dockerfile
+FROM hanuman-framework:sdk
+COPY myapp.c .
+RUN gcc -std=c99 myapp.c -lequinox $EQUINOX_LDFLAGS -o myapp
+CMD ["./myapp"]
+```
+
+Framework headers are installed flat into `/usr/local/include`, so plain
+`#include "http_server.h"` (the convention used throughout this codebase)
+works with no extra `-I` flags. The `EQUINOX_LDFLAGS` environment variable
+provides the exact linker flags needed (`-lrdkafka -lssl -lmongoc-1.0`,
+etc.). If your app also uses OpenTelemetry (`otel.h`), compile with `g++`
+and link with `$EQUINOX_OTEL_LDFLAGS` too:
+
+```dockerfile
+RUN g++ -std=c++17 -DOPENTELEMETRY_STL_VERSION=2017 myapp.c \
+      -lequinox $EQUINOX_LDFLAGS $EQUINOX_OTEL_LDFLAGS -o myapp
+```
+
+The final `runtime` stage only contains the compiled binaries and the
+runtime shared libraries (no compilers or `-dev` headers).
+
 ## Complete Feature Documentation
 
 ### HTTP Server
-- **[HTTP_SERVER.md](HTTP_SERVER.md)** - HTTP server implementation guide
-- **[HTTP2_SUPPORT.md](HTTP2_SUPPORT.md)** - HTTP/2 protocol documentation
-- **[PATH_PARAMETERS.md](PATH_PARAMETERS.md)** - Path parameters and query parsing
-- **[EPOLL_CONCURRENT.md](EPOLL_CONCURRENT.md)** - Concurrent connections with EPOLL
+- **[HTTP_SERVER.md](docs/http/HTTP_SERVER.md)** - HTTP server implementation guide
+- **[HTTP2_SUPPORT.md](docs/http/HTTP2_SUPPORT.md)** - HTTP/2 protocol documentation
+- **[PATH_PARAMETERS.md](docs/http/PATH_PARAMETERS.md)** - Path parameters and query parsing
+- **[EPOLL_CONCURRENT.md](docs/http/EPOLL_CONCURRENT.md)** - Concurrent connections with EPOLL
 
 ### HTTP Client
 - **Synchronous Requests**: `http_client_execute()` - Blocking requests
@@ -124,6 +194,42 @@ make run-unified         # Unified HTTP+Kafka demo
 - **Multi-Topic**: Subscribe to multiple topics simultaneously
 - **Authentication**: SASL PLAIN and SCRAM support
 - **Async Processing**: Non-blocking message consumption with callbacks
+
+### MongoDB Integration
+- **Connection Management**: `mongo_client_create()`, connection pooling
+- **CRUD Operations**: `mongo_insert_one/many()`, `mongo_find()`, `mongo_update()`, `mongo_delete()`
+- **Async Operations**: `mongo_insert_one_async()`, `mongo_find_async()`, `mongo_update_async()`
+- **Aggregation**: `mongo_aggregate()` - Full pipeline support with async support
+- **Index Management**: `mongo_create_index()`, `mongo_drop_index()`
+- **Transactions**: ACID-compliant operations
+- **SSL/TLS**: Secure connections with certificate authentication
+- **Non-blocking**: All operations available with callback-based async API
+- **Thread-Safe**: Mutex-protected concurrent async operations
+
+### WebSocket Support
+- **RFC 6455 Compliant**: Full WebSocket protocol implementation
+- **Server & Client**: Both server and client-side support
+- **Frame Types**: Text, binary, ping/pong, close frames
+- **Fragmentation**: Automatic handling of fragmented messages
+- **Broadcasting**: Send messages to all connected clients
+- **Callbacks**: `on_connect`, `on_message`, `on_close`, `on_error` events
+- **Thread-Safe**: Concurrent connections with mutex protection
+
+### Socket.IO Support
+- **Real-time Communication**: Built on WebSocket with fallback support
+- **Event-Based**: Custom event emitters with named events
+- **Rooms & Namespaces**: Organize clients into rooms for targeted broadcasting
+- **Acknowledgements**: Request/response pattern support
+- **Binary Support**: Send binary data alongside JSON
+- **Auto-reconnection**: Client-side automatic reconnection
+- **Broadcasting**: Emit to all clients or specific rooms
+
+### OpenTelemetry Support
+- **Tracing**: `otel_span_start()`, `otel_span_set_attribute()`, `otel_span_add_event()`, `otel_span_set_status()`, `otel_span_end()`
+- **Metrics**: `otel_counter_create/add()`, `otel_updowncounter_create/add()`, `otel_histogram_create/record()`
+- **Logging**: `otel_log()` - correlates log records with the active span's trace/span IDs
+- **Exporters**: `OTEL_EXPORTER_OSTREAM` (console) or `OTEL_EXPORTER_OTLP_HTTP` (send to a collector at `/v1/traces`, `/v1/metrics`, `/v1/logs`)
+- **Implementation**: `src/otel/otel.cpp` is compiled as C++ (g++) and exposes an `extern "C"` API from `src/include/otel/otel.h`; the rest of the framework stays pure C99
 
 ### JSON Processing
 - **Parser**: `json_parse()` - Parse JSON strings into tree structure
@@ -258,7 +364,113 @@ int main() {
 }
 ```
 
-### 4. JSON Processing
+### 4. MongoDB Operations
+
+```c
+#include "mongo_client.h"
+
+int main() {
+    // Create MongoDB client
+    MONGO_CONFIG config;
+    mongo_config_default(&config, "mongodb://localhost:27017", "mydb");
+    
+    MONGO_CLIENT *client = mongo_client_create(&config);
+    
+    // Test connection
+    if (!mongo_client_ping(client)) {
+        return 1;
+    }
+    
+    // Get collection
+    MONGO_COLLECTION *users = mongo_client_get_collection(client, NULL, "users");
+    
+    // Insert document
+    char id[64];
+    mongo_insert_one(users, "{\"name\":\"John\",\"age\":30}", id, sizeof(id));
+    
+    // Find documents
+    MONGO_CURSOR *cursor = mongo_find(users, "{\"age\":{\"$gte\":18}}", NULL);
+    char result[4096];
+    while (mongo_cursor_next(cursor, result, sizeof(result)) == 1) {
+        printf("Found: %s\n", result);
+    }
+    mongo_cursor_destroy(cursor);
+    
+    // Update document
+    mongo_update(users, "{\"name\":\"John\"}", "{\"$set\":{\"age\":31}}", NULL);
+    
+    // Count documents
+    int64_t count = mongo_count(users, NULL);
+    printf("Total users: %lld\n", (long long)count);
+    
+    // Cleanup
+    mongo_collection_destroy(users);
+    mongo_client_destroy(client);
+    return 0;
+}
+```
+
+### 4b. MongoDB Async Operations
+
+The async MongoDB API is **thread-safe** and supports concurrent operations. Multiple async operations can safely execute on the same collection simultaneously.
+
+```c
+#include "mongo_client.h"
+
+static volatile int operation_complete = 0;
+
+void on_insert_complete(MONGO_ASYNC_RESULT *result) {
+    if (result->success) {
+        printf("Inserted ID: %s\n", result->data);
+    }
+    operation_complete = 1;
+}
+
+void on_find_document(MONGO_ASYNC_RESULT *result) {
+    if (result->success) {
+        printf("Found: %s\n", result->data);
+    } else {
+        // End of stream (success = 0)
+        operation_complete = 1;
+    }
+}
+
+int main() {
+    MONGO_CLIENT *client = mongo_client_create(&config);
+    MONGO_COLLECTION *users = mongo_client_get_collection(client, NULL, "users");
+    
+    // Async insert
+    MONGO_ASYNC_HANDLE *handle = mongo_insert_one_async(
+        users,
+        "{\"name\":\"Alice\",\"age\":30}",
+        on_insert_complete,
+        NULL
+    );
+    
+    // Wait for completion
+    while (!operation_complete) {
+        usleep(10000);
+    }
+    mongo_async_handle_destroy(handle);
+    operation_complete = 0;
+    
+    // Async find (callback called for each document)
+    handle = mongo_find_async(users, "{\"age\":{\"$gte\":18}}", NULL, 
+                             on_find_document, NULL);
+    
+    while (!operation_complete) {
+        usleep(10000);
+    }
+    mongo_async_handle_destroy(handle);
+    
+    // Cleanup
+    mongo_collection_destroy(users);
+    mongo_client_destroy(client);
+    return 0;
+}
+```
+
+### 5. JSON Processing
 
 ```c
 #include "json_parser.h"
@@ -290,6 +502,215 @@ int main() {
     json_free(value);
     json_builder_destroy(builder);
     
+    return 0;
+}
+```
+
+### 6. WebSocket Echo Server
+
+```c
+#include "websocket.h"
+
+static WEBSOCKET_SERVER *ws_server = NULL;
+
+void on_ws_message(WEBSOCKET_CONNECTION *conn, const WS_MESSAGE *message, void *user_data) {
+    if (message->opcode == WS_OPCODE_TEXT) {
+        // Echo text messages back to client
+        char echo_msg[1024];
+        snprintf(echo_msg, sizeof(echo_msg), "Echo: %.*s", (int)message->length, message->data);
+        ws_send_text(conn, echo_msg, strlen(echo_msg));
+    } else if (message->opcode == WS_OPCODE_BINARY) {
+        // Echo binary messages
+        ws_send_binary(conn, message->data, message->length);
+    }
+}
+
+void on_ws_connect(WEBSOCKET_CONNECTION *conn, void *user_data) {
+    printf("Client connected: %s\n", ws_get_remote_addr(conn));
+    ws_send_text(conn, "Welcome to WebSocket Echo Server!", 33);
+}
+
+int main() {
+    WS_SERVER_CONFIG config = {
+        .host = "0.0.0.0",
+        .port = 8080,
+        .path = "/ws",
+        .max_connections = 100,
+        .max_message_size = 10 * 1024 * 1024  // 10MB
+    };
+    
+    ws_server = ws_server_create(&config);
+    
+    WS_CALLBACKS callbacks = {
+        .on_connect = on_ws_connect,
+        .on_message = on_ws_message
+    };
+    ws_server_set_callbacks(ws_server, &callbacks, NULL);
+    
+    ws_server_start(ws_server);
+    printf("WebSocket server listening on ws://localhost:8080/ws\n");
+    
+    // Keep running
+    while (1) {
+        sleep(1);
+    }
+    
+    ws_server_destroy(ws_server);
+    return 0;
+}
+```
+
+### 7. Socket.IO Chat Server
+
+```c
+#include "socketio.h"
+
+static SOCKETIO_SERVER *sio_server = NULL;
+
+typedef struct {
+    char username[64];
+    char room[64];
+} user_data_t;
+
+void on_join(SOCKETIO_SOCKET *socket, const SIO_EVENT *event, void *user_data) {
+    // Parse join event: {"username": "Alice", "room": "general"}
+    JSON_VALUE *json = json_parse(event->data);
+    JSON_VALUE *username_val = json_get_path(json, "username");
+    JSON_VALUE *room_val = json_get_path(json, "room");
+    
+    const char *username = json_get_string(username_val);
+    const char *room = json_get_string(room_val);
+    
+    // Store user data
+    user_data_t *data = malloc(sizeof(user_data_t));
+    strncpy(data->username, username, sizeof(data->username) - 1);
+    strncpy(data->room, room, sizeof(data->room) - 1);
+    sio_set_user_data(socket, data);
+    
+    // Join the room
+    sio_join(socket, room);
+    
+    // Send confirmation to user
+    char response[256];
+    snprintf(response, sizeof(response), "{\"message\":\"Joined room %s\"}", room);
+    sio_emit(socket, "joined", response);
+    
+    // Broadcast to room
+    char notification[256];
+    snprintf(notification, sizeof(notification), 
+             "{\"username\":\"%s\",\"message\":\"joined the room\"}", username);
+    sio_server_to(sio_server, room, "user_joined", notification);
+    
+    json_free(json);
+}
+
+void on_chat_message(SOCKETIO_SOCKET *socket, const SIO_EVENT *event, void *user_data) {
+    user_data_t *data = sio_get_user_data(socket);
+    if (!data) return;
+    
+    // Parse message: {"message": "Hello!"}
+    JSON_VALUE *json = json_parse(event->data);
+    JSON_VALUE *message_val = json_get_path(json, "message");
+    const char *message = json_get_string(message_val);
+    
+    // Broadcast to room
+    char broadcast[512];
+    snprintf(broadcast, sizeof(broadcast),
+             "{\"username\":\"%s\",\"message\":\"%s\",\"timestamp\":%ld}",
+             data->username, message, time(NULL));
+    sio_server_to(sio_server, data->room, "message", broadcast);
+    
+    json_free(json);
+}
+
+int main() {
+    SIO_SERVER_CONFIG config = {
+        .host = "0.0.0.0",
+        .port = 3000,
+        .path = "/socket.io"
+    };
+    
+    sio_server = sio_server_create(&config);
+    
+    // Register event handlers
+    sio_server_on(sio_server, "join", on_join, NULL);
+    sio_server_on(sio_server, "message", on_chat_message, NULL);
+    
+    sio_server_start(sio_server);
+    printf("Socket.IO server running on http://localhost:3000\n");
+    
+    while (1) {
+        sleep(1);
+    }
+    
+    sio_server_destroy(sio_server);
+    return 0;
+}
+```
+
+**Client-side JavaScript example:**
+```javascript
+const socket = io('http://localhost:3000');
+
+socket.emit('join', { username: 'Alice', room: 'general' });
+
+socket.on('joined', (data) => {
+    console.log('Joined:', data.message);
+});
+
+socket.on('message', (data) => {
+    console.log(`${data.username}: ${data.message}`);
+});
+
+socket.emit('message', { message: 'Hello everyone!' });
+```
+
+### 8. OpenTelemetry Tracing, Metrics, and Logs
+
+```c
+#include "otel.h"
+#include "application.h"
+
+static OTEL_CONFIG g_otel_config;
+
+static void otel_init_cb(void *ctx) { (void)ctx; otel_init(&g_otel_config); }
+static void otel_shutdown_cb(void *ctx) { (void)ctx; otel_shutdown(); }
+
+int main(void) {
+    g_otel_config.service_name = "my-service";
+    g_otel_config.service_version = "1.0.0";
+    g_otel_config.exporter = OTEL_EXPORTER_OSTREAM;   /* or OTEL_EXPORTER_OTLP_HTTP */
+    g_otel_config.otlp_endpoint = "http://localhost:4318";
+
+    APPLICATION *app = application_create("MyService", 1);
+
+    /* Wire OpenTelemetry into the app lifecycle using the generic hooks -
+     * no framework core changes needed. */
+    application_register_init_function(app, "otel_init", otel_init_cb, NULL);
+    application_register_cleanup_function(app, "otel_shutdown", otel_shutdown_cb, NULL);
+
+    application_initialize(app);
+    application_start(app);
+
+    /* Create a span for an operation */
+    OTEL_SPAN *span = otel_span_start("handle_request", OTEL_SPAN_KIND_SERVER, NULL);
+
+    OTEL_ATTRIBUTE attr = {"http.route", OTEL_ATTR_STRING, {.string_value = "/api/users"}};
+    otel_span_set_attribute(span, &attr);
+
+    /* Log correlated with the span's trace/span IDs */
+    otel_log(OTEL_SEVERITY_INFO, "request", "Handling request", span);
+
+    /* Record a metric */
+    OTEL_COUNTER *requests = otel_counter_create("http.requests", "Total requests", "1");
+    otel_counter_add(requests, 1.0, NULL, 0);
+
+    otel_span_set_status(span, OTEL_STATUS_OK, NULL);
+    otel_span_end(span);
+
+    application_stop(app);
+    application_cleanup(app);
+    application_destroy(app);
     return 0;
 }
 ```
@@ -532,6 +953,127 @@ int kafka_consumer_set_sasl_auth(KAFKA_CONSUMER *consumer, const char *mechanism
                                   const char *username, const char *password);
 ```
 
+### MongoDB API
+
+#### Client Management
+```c
+MONGO_CLIENT* mongo_client_create(MONGO_CONFIG *config);
+void mongo_client_destroy(MONGO_CLIENT *client);
+int mongo_client_ping(MONGO_CLIENT *client);
+void mongo_config_default(MONGO_CONFIG *config, const char *uri, const char *database);
+MONGO_COLLECTION* mongo_client_get_collection(MONGO_CLIENT *client, const char *database, const char *collection);
+void mongo_collection_destroy(MONGO_COLLECTION *collection);
+```
+
+#### Document Operations (CRUD)
+```c
+int mongo_insert_one(MONGO_COLLECTION *collection, const char *document, char *inserted_id, size_t id_size);
+int mongo_insert_many(MONGO_COLLECTION *collection, const char **documents, size_t count);
+MONGO_CURSOR* mongo_find(MONGO_COLLECTION *collection, const char *query, MONGO_QUERY_OPTIONS *options);
+int mongo_find_one(MONGO_COLLECTION *collection, const char *query, char *result, size_t result_size);
+int mongo_update(MONGO_COLLECTION *collection, const char *query, const char *update, MONGO_UPDATE_OPTIONS *options);
+int mongo_replace_one(MONGO_COLLECTION *collection, const char *query, const char *replacement, bool upsert);
+int mongo_delete(MONGO_COLLECTION *collection, const char *query, MONGO_DELETE_OPTIONS *options);
+int64_t mongo_count(MONGO_COLLECTION *collection, const char *query);
+```
+
+#### Cursor Operations
+```c
+int mongo_cursor_next(MONGO_CURSOR *cursor, char *result, size_t result_size);
+int mongo_cursor_has_next(MONGO_CURSOR *cursor);
+void mongo_cursor_destroy(MONGO_CURSOR *cursor);
+```
+
+#### Aggregation & Indexes
+```c
+MONGO_CURSOR* mongo_aggregate(MONGO_COLLECTION *collection, const char *pipeline);
+int mongo_create_index(MONGO_COLLECTION *collection, const char *keys, bool unique);
+int mongo_drop_index(MONGO_COLLECTION *collection, const char *index_name);
+```
+
+#### Asynchronous Operations
+```c
+// Async CRUD operations with callbacks
+MONGO_ASYNC_HANDLE* mongo_insert_one_async(MONGO_COLLECTION *collection, const char *document,
+                                           mongo_async_callback callback, void *user_data);
+MONGO_ASYNC_HANDLE* mongo_find_async(MONGO_COLLECTION *collection, const char *query,
+                                     MONGO_QUERY_OPTIONS *options, mongo_async_callback callback, void *user_data);
+MONGO_ASYNC_HANDLE* mongo_find_one_async(MONGO_COLLECTION *collection, const char *query,
+                                         mongo_async_callback callback, void *user_data);
+MONGO_ASYNC_HANDLE* mongo_update_async(MONGO_COLLECTION *collection, const char *query, const char *update,
+                                       MONGO_UPDATE_OPTIONS *options, mongo_async_callback callback, void *user_data);
+MONGO_ASYNC_HANDLE* mongo_delete_async(MONGO_COLLECTION *collection, const char *query,
+                                       MONGO_DELETE_OPTIONS *options, mongo_async_callback callback, void *user_data);
+MONGO_ASYNC_HANDLE* mongo_count_async(MONGO_COLLECTION *collection, const char *query,
+                                      mongo_async_callback callback, void *user_data);
+MONGO_ASYNC_HANDLE* mongo_aggregate_async(MONGO_COLLECTION *collection, const char *pipeline,
+                                          mongo_async_callback callback, void *user_data);
+
+// Async handle management
+int mongo_async_wait(MONGO_ASYNC_HANDLE *handle);
+int mongo_async_is_complete(MONGO_ASYNC_HANDLE *handle);
+int mongo_async_cancel(MONGO_ASYNC_HANDLE *handle);
+void mongo_async_handle_destroy(MONGO_ASYNC_HANDLE *handle);
+```
+
+#### Async Handle Management Patterns
+
+The framework supports two patterns for managing async operation handles:
+
+**Pattern 1: External Handle Management**
+- Application tracks handle and destroys it explicitly
+- Good for operations that need synchronous waiting
+```c
+MONGO_ASYNC_HANDLE *h = mongo_insert_one_async(collection, doc, callback, NULL);
+mongo_async_wait(h);  // Wait for completion
+mongo_async_handle_destroy(h);  // Explicit cleanup
+```
+
+**Pattern 2: Self-Cleanup in Callback**
+- Callback receives handle via `result->handle` and destroys it
+- Fire-and-forget pattern for background operations
+```c
+void on_complete(MONGO_ASYNC_RESULT *result) {
+    if (result->success) {
+        printf("Operation succeeded\n");
+    }
+    // Handle cleans itself up
+    mongo_async_handle_destroy(result->handle);
+}
+
+// No need to store handle
+mongo_insert_one_async(collection, doc, on_complete, NULL);
+```
+
+**Pattern 3: Streaming Operations**
+- For `mongo_find_async` and `mongo_aggregate_async`
+- Callback invoked multiple times (once per document)
+- Final callback has `success=0` to indicate end-of-stream
+```c
+void on_document(MONGO_ASYNC_RESULT *result) {
+    if (result->success) {
+        // Process document
+        printf("Doc: %s\n", result->data);
+    } else {
+        // End of stream - cleanup
+        printf("Stream complete\n");
+        mongo_async_handle_destroy(result->handle);
+    }
+}
+```
+
+int mongo_create_index(MONGO_COLLECTION *collection, const char *keys, bool unique);
+int mongo_drop_index(MONGO_COLLECTION *collection, const char *index_name);
+```
+
+#### Database Operations
+```c
+int mongo_list_databases(MONGO_CLIENT *client, char *result, size_t result_size);
+int mongo_list_collections(MONGO_CLIENT *client, const char *database, char *result, size_t result_size);
+int mongo_drop_database(MONGO_CLIENT *client, const char *database);
+int mongo_drop_collection(MONGO_COLLECTION *collection);
+```
+
 ### JSON API
 
 #### Parsing
@@ -696,45 +1238,66 @@ The framework includes comprehensive demo applications showcasing all features:
 - **[json_demo.c](examples/json_demo.c)** - JSON parsing and building
 - **[json_schema_demo.c](examples/json_schema_demo.c)** - Schema validation
 
+### Real-Time Communication Demos
+- **[websocket_echo_server.c](examples/websocket_echo_server.c)** - RFC 6455 WebSocket echo server
+- **[socketio_chat_server.c](examples/socketio_chat_server.c)** - Socket.IO chat server with rooms
+
+### Observability Demos
+- **[otel_demo.c](examples/otel_demo.c)** - Distributed tracing, metrics, and correlated logs
+
 ### Core Framework
 - **[demo_app.c](examples/demo_app.c)** - Module and service controller basics
 
 ## Documentation
 
-- **[HTTP_SERVER.md](HTTP_SERVER.md)** - HTTP server implementation guide
-- **[HTTP2_SUPPORT.md](HTTP2_SUPPORT.md)** - HTTP/2 protocol documentation
-- **[PATH_PARAMETERS.md](PATH_PARAMETERS.md)** - Path parameters and query string parsing
-- **[EPOLL_CONCURRENT.md](EPOLL_CONCURRENT.md)** - Concurrent connection handling with EPOLL
-- **[API.md](API.md)** - Complete API reference
-- **[QUICKSTART.md](QUICKSTART.md)** - Quick start guide
+- **[HTTP_SERVER.md](docs/http/HTTP_SERVER.md)** - HTTP server implementation guide
+- **[HTTP2_SUPPORT.md](docs/http/HTTP2_SUPPORT.md)** - HTTP/2 protocol documentation
+- **[PATH_PARAMETERS.md](docs/http/PATH_PARAMETERS.md)** - Path parameters and query string parsing
+- **[EPOLL_CONCURRENT.md](docs/http/EPOLL_CONCURRENT.md)** - Concurrent connection handling with EPOLL
+- **[API.md](docs/API.md)** - Complete API reference
+- **[QUICKSTART.md](docs/QUICKSTART.md)** - Quick start guide
 - **[man/](man/)** - Linux man pages for all APIs (`man 3 http_server`, `man 7 equinox`)
 
 ## Project Structure
 
+Source files are organized by function, under both `src/` and `src/include/`
+(e.g. `src/http/http_server.c` + `src/include/http/http_server.h`). Every
+example still uses bare includes like `#include "http_server.h"` - the
+Makefile adds every `src/include/<module>/` folder to the include path.
+
 ```
 equinox-framework/
 ├── src/
-│   ├── include/
-│   │   ├── application.h
-│   │   ├── module.h
-│   │   ├── service_controller.h
-│   │   ├── framework.h
-│   │   ├── http_server.h         # HTTP server API
-│   │   ├── http_route.h          # Route management
-│   │   ├── http2.h               # HTTP/2 protocol
-│   │   ├── http_client.h         # HTTP client API
-│   │   ├── kafka.h               # Kafka integration
-│   │   └── json.h                # JSON processing
-│   ├── application.c
-│   ├── module.c
-│   ├── service_controller.c
-│   ├── framework.c
-│   ├── http_server.c             # HTTP server implementation
-│   ├── http_route.c              # Route handler
-│   ├── http2.c                   # HTTP/2 implementation
-│   ├── http_client.c             # HTTP client implementation
-│   ├── kafka.c                   # Kafka integration
-│   └── json.c                    # JSON parser/builder
+│   ├── core/                     # Application/module/service lifecycle
+│   │   ├── application.c
+│   │   ├── module.c
+│   │   ├── service_controller.c
+│   │   └── framework.c
+│   ├── http/                     # HTTP/1.1, HTTP/2 server + HTTP client
+│   │   ├── http_server.c
+│   │   ├── http_route.c
+│   │   ├── http2.c
+│   │   └── http_client.c
+│   ├── kafka/
+│   │   └── kafka_client.c
+│   ├── mongo/
+│   │   └── mongo_client.c
+│   ├── json/
+│   │   └── json_parser.c
+│   ├── realtime/                 # WebSocket + Socket.IO
+│   │   ├── websocket.c
+│   │   └── socketio.c
+│   ├── otel/                     # OpenTelemetry (C++ wrapper, see below)
+│   │   └── otel.cpp
+│   └── include/
+│       ├── core/
+│       ├── http/
+│       ├── kafka/
+│       ├── mongo/
+│       ├── json/
+│       ├── realtime/
+│       └── otel/
+│           └── otel.h
 ├── examples/
 │   ├── demo_app.c
 │   ├── http_server_app.c
@@ -749,6 +1312,11 @@ equinox-framework/
 │   ├── kafka_multi_topic_demo.c
 │   ├── kafka_auth_demo.c
 │   ├── unified_app.c
+│   ├── mongo_demo.c
+│   ├── mongo_async_demo.c
+│   ├── websocket_echo_server.c
+│   ├── socketio_chat_server.c
+│   ├── otel_demo.c
 │   ├── json_demo.c
 │   └── json_schema_demo.c
 ├── man/                          # Man pages
@@ -770,10 +1338,13 @@ equinox-framework/
 ## Dependencies
 
 - **C99 compiler**: GCC or Clang
+- **C++17 compiler**: g++ (required only for `src/otel/otel.cpp`, the OpenTelemetry wrapper)
 - **POSIX system**: Linux, macOS, Unix
 - **OpenSSL**: For HTTPS/TLS support (`libssl-dev`)
 - **zlib**: For compression support (`zlib1g-dev`)
 - **librdkafka**: For Kafka integration (`librdkafka-dev`)
+- **libmongoc**: For MongoDB integration (`libmongoc-dev`)
+- **opentelemetry-cpp**: For tracing/metrics/logs (built from source, see below)
 - **pthread**: For async operations (usually included)
 
 ### Installing Dependencies
@@ -788,6 +1359,49 @@ sudo yum install gcc openssl-devel zlib-devel librdkafka-devel
 # macOS
 brew install openssl zlib librdkafka
 ```
+
+### Building OpenTelemetry C++ SDK
+
+The framework's OpenTelemetry support (`src/otel/otel.cpp`, `src/include/otel/otel.h`)
+is built on top of [open-telemetry/opentelemetry-cpp](https://github.com/open-telemetry/opentelemetry-cpp).
+Since no prebuilt package ships this on most distributions, build it from
+source and install it under `/usr/local` before running `make`:
+
+```bash
+sudo apt-get install -y cmake libprotobuf-dev protobuf-compiler \
+    libcurl4-openssl-dev nlohmann-json3-dev
+
+git clone --depth 1 --branch v1.16.1 \
+    https://github.com/open-telemetry/opentelemetry-cpp.git
+cd opentelemetry-cpp
+git submodule update --init --depth 1 third_party/opentelemetry-proto
+
+mkdir build && cd build
+cmake .. \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DBUILD_SHARED_LIBS=OFF \
+  -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
+  -DWITH_STL=CXX17 \
+  -DWITH_ABSEIL=OFF \
+  -DWITH_OTLP_GRPC=OFF \
+  -DWITH_OTLP_HTTP=ON \
+  -DWITH_ZIPKIN=OFF \
+  -DWITH_PROMETHEUS=OFF \
+  -DWITH_EXAMPLES=OFF \
+  -DBUILD_TESTING=OFF \
+  -DWITH_DEPRECATED_SDK_FACTORY=OFF
+cmake --build . -j"$(nproc)"
+sudo cmake --build . --target install
+sudo ldconfig
+```
+
+> **Important:** because the SDK is configured with `WITH_STL=CXX17`, its
+> `nostd::shared_ptr<T>` becomes a thin wrapper around `std::shared_ptr<T>`
+> rather than its own ABI-stable implementation. Any translation unit that
+> includes OpenTelemetry headers (like `src/otel/otel.cpp`, or the Makefile's
+> `OTEL_CXXFLAGS`) **must** be compiled with `-DOPENTELEMETRY_STL_VERSION=2017`
+> to match, or you will get a segfault deep inside `nostd::shared_ptr` that
+> looks nothing like the actual bug.
 
 ## Performance Characteristics
 
@@ -932,6 +1546,36 @@ curl http://localhost:8080/api/hello
 ./build/kafka_demo
 ./build/kafka_multi_topic_demo
 
+# MongoDB tests (requires running MongoDB)
+./build/mongo_demo
+./build/mongo_async_demo
+
+# WebSocket tests
+./build/websocket_echo_server &
+# Test with wscat (npm install -g wscat):
+wscat -c ws://localhost:8080/ws
+# Or with JavaScript:
+# const ws = new WebSocket('ws://localhost:8080/ws');
+# ws.onmessage = (e) => console.log(e.data);
+# ws.send('Hello WebSocket!');
+
+# Socket.IO tests
+./build/socketio_chat_server &
+# Test with socket.io-client (npm install socket.io-client):
+# node
+# > const io = require('socket.io-client');
+# > const socket = io('http://localhost:3000');
+# > socket.emit('join', { username: 'Alice', room: 'general' });
+# > socket.on('message', (data) => console.log(data));
+# > socket.emit('message', { message: 'Hello!' });
+
+# OpenTelemetry tests (console/ostream exporter, no external collector needed)
+./build/otel_demo
+# Prints spans, logs (correlated with trace/span IDs), and metrics to stdout
+
+# OpenTelemetry tests with an OTLP collector (e.g. Jaeger, otel-collector)
+./build/otel_demo otlp http://localhost:4318
+
 # JSON tests
 ./build/json_demo
 ./build/json_schema_demo
@@ -942,13 +1586,13 @@ curl http://localhost:8080/api/hello
 
 ## Documentation
 
-- **[HTTP_SERVER.md](HTTP_SERVER.md)** - Complete HTTP server guide
-- **[HTTP2_SUPPORT.md](HTTP2_SUPPORT.md)** - HTTP/2 protocol documentation
-- **[ASYNC_HTTP_FEATURES.md](ASYNC_HTTP_FEATURES.md)** - Async HTTP client guide
-- **[PATH_PARAMETERS.md](PATH_PARAMETERS.md)** - Path parameters and query parsing
-- **[EPOLL_CONCURRENT.md](EPOLL_CONCURRENT.md)** - Concurrent connection handling
-- **[API.md](API.md)** - Complete API reference
-- **[QUICKSTART.md](QUICKSTART.md)** - Quick start guide
+- **[HTTP_SERVER.md](docs/http/HTTP_SERVER.md)** - Complete HTTP server guide
+- **[HTTP2_SUPPORT.md](docs/http/HTTP2_SUPPORT.md)** - HTTP/2 protocol documentation
+- **[ASYNC_HTTP_FEATURES.md](docs/http/ASYNC_HTTP_FEATURES.md)** - Async HTTP client guide
+- **[PATH_PARAMETERS.md](docs/http/PATH_PARAMETERS.md)** - Path parameters and query parsing
+- **[EPOLL_CONCURRENT.md](docs/http/EPOLL_CONCURRENT.md)** - Concurrent connection handling
+- **[API.md](docs/API.md)** - Complete API reference
+- **[QUICKSTART.md](docs/QUICKSTART.md)** - Quick start guide
 - **[man/](man/)** - Linux man pages (`man 3 http_client`, `man 3 kafka`, etc.)
 
 ## License

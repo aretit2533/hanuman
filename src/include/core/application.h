@@ -8,6 +8,8 @@ typedef struct _module_ MODULE;
 typedef struct _service_controller_ SERVICE_CONTROLLER;
 typedef struct _kafka_client_ KAFKA_CLIENT;
 typedef struct _http_server_ HTTP_SERVER;
+typedef struct _websocket_server_ WEBSOCKET_SERVER;
+typedef struct _socketio_server_ SOCKETIO_SERVER;
 
 /* Function list for initialization and cleanup */
 typedef struct _function_list_
@@ -43,6 +45,8 @@ typedef struct _application_
     /* Server management */
     HTTP_SERVER *http_server;
     KAFKA_CLIENT *kafka_client;
+    WEBSOCKET_SERVER *websocket_server;
+    SOCKETIO_SERVER *socketio_server;
     
     int initialized;
     int running;
@@ -63,9 +67,11 @@ int application_cleanup(APPLICATION *app);
 void* application_get_context(APPLICATION *app);
 void application_set_context(APPLICATION *app, void *context);
 
-/* Unified event loop - runs both HTTP and Kafka */
+/* Unified event loop - runs HTTP, Kafka, WebSocket, and Socket.IO */
 void application_set_http_server(APPLICATION *app, HTTP_SERVER *server);
 void application_set_kafka_client(APPLICATION *app, KAFKA_CLIENT *kafka);
+void application_set_websocket_server(APPLICATION *app, WEBSOCKET_SERVER *server);
+void application_set_socketio_server(APPLICATION *app, SOCKETIO_SERVER *server);
 int application_run(APPLICATION *app);
 
 #endif /* APPLICATION_H */

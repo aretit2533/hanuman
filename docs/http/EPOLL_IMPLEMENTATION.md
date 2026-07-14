@@ -32,8 +32,8 @@
 ### Code Changes
 
 **Modified Files:**
-- `src/http_server.c` - Replaced blocking accept loop with epoll event loop
-- `src/include/http_server.h` - Added epoll_fd and connection tracking to HTTP_SERVER struct
+- `src/http/http_server.c` - Replaced blocking accept loop with epoll event loop
+- `src/include/http/http_server.h` - Added epoll_fd and connection tracking to HTTP_SERVER struct
 
 **New Components:**
 - `CONNECTION_STATE` structure for tracking each client
@@ -209,12 +209,12 @@ wait
    - Added EPOLL to feature list
    - Referenced new documentation
 
-2. **src/http_server.c**
+2. **src/http/http_server.c**
    - Replaced blocking accept loop
    - Implemented epoll event handling
    - Added connection management
 
-3. **src/include/http_server.h**
+3. **src/include/http/http_server.h**
    - Extended HTTP_SERVER structure
    - Added CONNECTION_STATE type
 

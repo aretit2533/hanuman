@@ -15,10 +15,10 @@
  *   curl http://localhost:8080/js/app.js     -> serves JavaScript
  */
 
-#include "../src/include/framework.h"
-#include "../src/include/application.h"
-#include "../src/include/http_server.h"
-#include "../src/include/json_parser.h"
+#include "framework.h"
+#include "application.h"
+#include "http_server.h"
+#include "json_parser.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <signal.h>

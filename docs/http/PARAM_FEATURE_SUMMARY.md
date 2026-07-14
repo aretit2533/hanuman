@@ -126,12 +126,12 @@ typedef struct {
 
 ## Files Modified
 
-1. **src/include/http_server.h**
+1. **src/include/http/http_server.h**
    - Added HTTP_PARAM structure
    - Added parameter arrays to HTTP_REQUEST
    - Added function declarations
 
-2. **src/http_server.c**
+2. **src/http/http_server.c**
    - Implemented parameter getter/setter functions
    - Added URL decoding function
    - Added query string parser

@@ -67,9 +67,9 @@ PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n
 ### HTTP/2 Components
 
 ```
-src/include/http2.h      - HTTP/2 protocol structures and definitions
-src/http2.c              - HTTP/2 implementation
-src/http_server.c        - Unified server with protocol detection
+src/include/http/http2.h      - HTTP/2 protocol structures and definitions
+src/http/http2.c              - HTTP/2 implementation
+src/http/http_server.c        - Unified server with protocol detection
 ```
 
 ### Key Structures
@@ -255,7 +255,7 @@ curl -v http://localhost:8080/ 2>&1 | grep -i server
 ## Next Steps
 
 - See [HTTP_SERVER.md](HTTP_SERVER.md) for HTTP server basics
-- See [API.md](API.md) for complete API reference
+- See [API.md](../API.md) for complete API reference
 - See [examples/http2_server_app.c](examples/http2_server_app.c) for working example
 
 ## References

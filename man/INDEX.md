@@ -228,9 +228,9 @@ man 3 http_server
 - **README.md** - Project overview
 - **man/README.md** - Man page documentation
 - **man/MANPAGE_GUIDE.md** - Detailed usage guide
-- **HTTP_SERVER.md** - Extended HTTP server docs
-- **PATH_PARAMETERS.md** - Path parameter guide
-- **API.md** - Complete API reference
+- **docs/http/HTTP_SERVER.md** - Extended HTTP server docs
+- **docs/http/PATH_PARAMETERS.md** - Path parameter guide
+- **docs/API.md** - Complete API reference
 
 ## Standards Compliance
 

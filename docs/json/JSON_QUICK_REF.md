@@ -148,4 +148,4 @@ curl -X POST http://localhost:8080/api/users \
 
 ## Full Documentation
 
-See [JSON_PARSER.md](docs/JSON_PARSER.md) for complete API reference.
+See [JSON_PARSER.md](JSON_PARSER.md) for complete API reference.

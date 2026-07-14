@@ -25,10 +25,6 @@ demo_app
 *~
 .DS_Store
 
-# Core dumps
-core
-core.*
-
 # Dependency files
 *.d
 

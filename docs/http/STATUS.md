@@ -17,13 +17,13 @@
 - Comprehensive error handling
 
 **Files Created:**
-- `src/include/http2.h` (149 lines) - Protocol definitions
-- `src/http2.c` (400+ lines) - Complete implementation
+- `src/include/http/http2.h` (149 lines) - Protocol definitions
+- `src/http/http2.c` (400+ lines) - Complete implementation
 - `examples/http2_server_app.c` (265 lines) - Demo application
 - `HTTP2_SUPPORT.md` (250+ lines) - Full documentation
 
 **Integration:**
-- Modified `src/http_server.c` to detect protocol using MSG_PEEK
+- Modified `src/http/http_server.c` to detect protocol using MSG_PEEK
 - Server automatically routes HTTP/1.1 and HTTP/2 to correct handlers
 - Transparent to application code - same route handlers work for both
 

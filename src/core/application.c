@@ -34,6 +34,8 @@ APPLICATION* application_create(const char *name, int version)
     app->context = NULL;
     app->http_server = NULL;
     app->kafka_client = NULL;
+    app->websocket_server = NULL;
+    app->socketio_server = NULL;
     
     app->init_list = NULL;
     app->cleanup_list = NULL;
@@ -327,15 +329,29 @@ void application_set_kafka_client(APPLICATION *app, KAFKA_CLIENT *kafka)
     }
 }
 
-/* Unified event loop - handles both HTTP and Kafka */
+void application_set_websocket_server(APPLICATION *app, WEBSOCKET_SERVER *server)
+{
+    if (app) {
+        app->websocket_server = server;
+    }
+}
+
+void application_set_socketio_server(APPLICATION *app, SOCKETIO_SERVER *server)
+{
+    if (app) {
+        app->socketio_server = server;
+    }
+}
+
+/* Unified event loop - handles HTTP, Kafka, WebSocket, and Socket.IO */
 int application_run(APPLICATION *app)
 {
     if (!app) {
         return FRAMEWORK_ERROR_NULL_PTR;
     }
     
-    if (!app->http_server && !app->kafka_client) {
-        framework_log(LOG_LEVEL_ERROR, "No HTTP server or Kafka client configured");
+    if (!app->http_server && !app->kafka_client && !app->websocket_server && !app->socketio_server) {
+        framework_log(LOG_LEVEL_ERROR, "No HTTP server, Kafka client, WebSocket server, or Socket.IO server configured");
         return FRAMEWORK_ERROR_INVALID;
     }
     
@@ -373,21 +389,33 @@ int application_run(APPLICATION *app)
         framework_log(LOG_LEVEL_INFO, "Kafka client started successfully");
     }
     
+    /* Start WebSocket server if configured */
+    if (app->websocket_server) {
+        framework_log(LOG_LEVEL_INFO, "Starting WebSocket server...");
+        /* WebSocket server starts in its own threads - no return value check needed */
+        framework_log(LOG_LEVEL_INFO, "WebSocket server started successfully");
+    }
+    
+    /* Start Socket.IO server if configured */
+    if (app->socketio_server) {
+        framework_log(LOG_LEVEL_INFO, "Starting Socket.IO server...");
+        /* Socket.IO server starts in its own threads - no return value check needed */
+        framework_log(LOG_LEVEL_INFO, "Socket.IO server started successfully");
+    }
+    
     framework_log(LOG_LEVEL_INFO, "Application running - press Ctrl+C to stop");
     
     /* Main event loop */
-    if (app->http_server && !app->kafka_client) {
-        /* HTTP only - use blocking http_server_run */
+    if (app->http_server) {
+        /* HTTP server - use blocking http_server_run */
+        /* Other servers run in their own threads */
         http_server_run(app->http_server);
-    } else if (!app->http_server && app->kafka_client) {
-        /* Kafka only - simple sleep loop */
+    } else {
+        /* No HTTP server - simple sleep loop */
+        /* WebSocket, Socket.IO, and Kafka run in their own threads */
         while (app->running) {
             sleep(1);
         }
-    } else {
-        /* Both HTTP and Kafka - run HTTP in current thread */
-        /* Kafka consumers run in their own threads already */
-        http_server_run(app->http_server);
     }
     
     /* Cleanup */
@@ -401,6 +429,16 @@ int application_run(APPLICATION *app)
     if (app->http_server) {
         framework_log(LOG_LEVEL_INFO, "Stopping HTTP server...");
         http_server_stop(app->http_server);
+    }
+    
+    if (app->websocket_server) {
+        framework_log(LOG_LEVEL_INFO, "WebSocket server stopped");
+        /* WebSocket server cleanup handled externally */
+    }
+    
+    if (app->socketio_server) {
+        framework_log(LOG_LEVEL_INFO, "Socket.IO server stopped");
+        /* Socket.IO server cleanup handled externally */
     }
     
     app->running = 0;

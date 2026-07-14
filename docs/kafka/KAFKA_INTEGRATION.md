@@ -595,6 +595,6 @@ int main(void)
 
 ## See Also
 
-- [HTTP Server Documentation](HTTP_SERVER.md)
-- [Framework Documentation](README.md)
+- [HTTP Server Documentation](../http/HTTP_SERVER.md)
+- [Framework Documentation](../../README.md)
 - [librdkafka Documentation](https://docs.confluent.io/platform/current/clients/librdkafka/html/index.html)

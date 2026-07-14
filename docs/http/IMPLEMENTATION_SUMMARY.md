@@ -21,8 +21,8 @@ The Equinox Framework has been successfully extended with **HTTP/2 protocol supp
 - **Error Handling**: Comprehensive HTTP/2 error codes
 
 #### Files Added
-- `src/include/http2.h` - HTTP/2 protocol structures and definitions
-- `src/http2.c` - HTTP/2 implementation (~400 lines)
+- `src/include/http/http2.h` - HTTP/2 protocol structures and definitions
+- `src/http/http2.c` - HTTP/2 implementation (~400 lines)
 - `examples/http2_server_app.c` - HTTP/2 demo application
 - `HTTP2_SUPPORT.md` - Comprehensive HTTP/2 documentation
 
@@ -103,8 +103,8 @@ Client → TCP Connection ──┤
 ### New Files
 | File | Lines | Purpose |
 |------|-------|---------|
-| `src/include/http2.h` | 149 | HTTP/2 protocol definitions |
-| `src/http2.c` | 400+ | HTTP/2 implementation |
+| `src/include/http/http2.h` | 149 | HTTP/2 protocol definitions |
+| `src/http/http2.c` | 400+ | HTTP/2 implementation |
 | `examples/http2_server_app.c` | 265 | HTTP/2 demo with all methods |
 | `HTTP2_SUPPORT.md` | 250+ | HTTP/2 documentation |
 | `test_http2.sh` | 150+ | Comprehensive test suite |
@@ -112,9 +112,9 @@ Client → TCP Connection ──┤
 ### Modified Files
 | File | Changes |
 |------|---------|
-| `src/http_server.c` | Added protocol detection in `handle_client()` |
-| `src/http_server.c` | Added `http_server_patch()` function |
-| `src/include/http_server.h` | Added PATCH method declaration |
+| `src/http/http_server.c` | Added protocol detection in `handle_client()` |
+| `src/http/http_server.c` | Added `http_server_patch()` function |
+| `src/include/http/http_server.h` | Added PATCH method declaration |
 | `Makefile` | Added `http2.c` to sources, added HTTP/2 server app |
 | `README.md` | Updated with HTTP/2 and PATCH support |
 

@@ -239,6 +239,6 @@ Equinox makes it simple!
 
 ## See Also
 
-- [HTTP Server Documentation](../README.md)
-- [Kafka Integration Guide](../KAFKA_INTEGRATION.md)
+- [HTTP Server Documentation](../../README.md)
+- [Kafka Integration Guide](../kafka/KAFKA_INTEGRATION.md)
 - [Complete Example](../examples/unified_app.c)
