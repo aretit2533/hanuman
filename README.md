@@ -47,7 +47,7 @@ A comprehensive, production-ready C framework for building high-performance web 
 - **Error Handling**: Comprehensive delivery reports and error callbacks
 - **High Performance**: Built on librdkafka for production use
 
-### �️ MongoDB Integration
+### 🗄️ MongoDB Integration
 - **Full CRUD Operations**: Insert, find, update, delete documents
 - **Async Support**: Non-blocking database operations with callbacks
 - **Aggregation Pipeline**: Complex data transformations
@@ -65,7 +65,7 @@ A comprehensive, production-ready C framework for building high-performance web 
 - **Acknowledgements**: Request/response patterns for reliable messaging
 - **Thread-Safe**: Concurrent connections with proper synchronization
 
-### �📄 JSON Processing
+### 📄 JSON Processing
 - **Full JSON Parser**: Parse JSON strings to structured data
 - **JSON Builder**: Construct JSON objects and arrays programmatically
 - **Schema Validation**: Validate JSON against schemas

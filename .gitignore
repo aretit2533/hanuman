@@ -40,3 +40,4 @@ coverage/
 
 # Static analysis
 cppcheck-build/
+apps/*

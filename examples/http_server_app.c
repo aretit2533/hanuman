@@ -196,7 +196,7 @@ int main(int argc, char *argv[])
     }
     
     /* Create HTTP server */
-    HTTP_SERVER *server = http_server_create("0.0.0.0", 8080);
+    HTTP_SERVER *server = http_server_create("0.0.0.0", 3005);
     if (!server) {
         fprintf(stderr, "Failed to create HTTP server\n");
         application_destroy(app);
